@@ -48,6 +48,15 @@ const useProjectStore = create((set, get) => ({
     return data;
   },
 
+  updateProject: async (id, fields) => {
+    const { data } = await api.patch(`/projects/${id}`, fields);
+    set(s => ({
+      projects: s.projects.map(p => p.id === id ? data : p),
+      currentProject: s.currentProject?.id === id ? { ...s.currentProject, ...data } : s.currentProject,
+    }));
+    return data;
+  },
+
   saveDirection: async (id, direction) => {
     await api.post(`/projects/${id}/direction`, direction);
     await get().refreshCurrentProject();
