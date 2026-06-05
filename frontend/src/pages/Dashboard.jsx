@@ -119,7 +119,7 @@ export default function Dashboard({ onOpenProject }) {
         <div>
           <div className="eyebrow" style={{ marginBottom: 8 }}>Projects</div>
           <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em' }}>
-            URL → Redesign Pipeline
+            Rebrand your Webpage
           </h1>
         </div>
         <button className="btn btn-primary btn-lg" onClick={() => setShowModal(true)}>

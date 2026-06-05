@@ -19,6 +19,13 @@ function openPDFFromHtml(html) {
   setTimeout(() => win.print(), 800);
 }
 
+// Inject <base target="_blank"> so iframe links open in a new tab, not inside the iframe
+function injectBaseTarget(html) {
+  if (!html) return html;
+  if (/<base\b/i.test(html)) return html;
+  return html.replace(/(<head[^>]*>)/i, '$1\n  <base target="_blank">');
+}
+
 function downloadHtml(html, filename = 'site.html') {
   const blob = new Blob([html], { type: 'text/html' });
   const url  = URL.createObjectURL(blob);
@@ -220,7 +227,7 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
           <iframe
             key={`${activeV}-${displayHtml.slice(0, 40)}`}
             ref={iframeRef}
-            srcDoc={displayHtml}
+            srcDoc={injectBaseTarget(displayHtml)}
             style={{ width: '100%', height: 800, border: 'none', display: 'block' }}
             title="Design preview"
             sandbox="allow-scripts allow-same-origin"
