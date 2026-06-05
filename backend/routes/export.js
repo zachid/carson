@@ -9,7 +9,9 @@ const router = Router({ mergeParams: true });
 router.post('/', async (req, res) => {
   const projectId = req.params.id;
 
-  const stage5 = db.prepare('SELECT output FROM stages WHERE project_id = ? AND stage_num = 5').get(projectId);
+  const { data: stage5 } = await db.from('stages')
+    .select('output').eq('project_id', projectId).eq('stage_num', 5).maybeSingle();
+
   if (!stage5?.output) return res.status(400).json({ error: 'Stage 5 not complete' });
 
   try {

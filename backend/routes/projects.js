@@ -5,69 +5,60 @@ import db from '../db/db.js';
 const router = Router();
 
 // GET /api/projects
-router.get('/', (req, res) => {
-  const projects = db.prepare(`
-    SELECT * FROM projects ORDER BY updated_at DESC
-  `).all();
-  res.json(projects);
+router.get('/', async (req, res) => {
+  const { data, error } = await db.from('projects').select('*').order('updated_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
 // POST /api/projects
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { name, url } = req.body;
   if (!name || !url) return res.status(400).json({ error: 'name and url required' });
 
-  const id = uuid();
-  db.prepare(`
-    INSERT INTO projects (id, name, url) VALUES (?, ?, ?)
-  `).run(id, name, url);
+  const { data, error } = await db.from('projects')
+    .insert({ id: uuid(), name, url })
+    .select().single();
 
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
-  res.status(201).json(project);
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(data);
 });
 
 // GET /api/projects/:id
-router.get('/:id', (req, res) => {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
-  if (!project) return res.status(404).json({ error: 'Not found' });
+router.get('/:id', async (req, res) => {
+  const { data: project, error } = await db.from('projects').select('*').eq('id', req.params.id).single();
+  if (error || !project) return res.status(404).json({ error: 'Not found' });
 
-  const stages = db.prepare('SELECT * FROM stages WHERE project_id = ? ORDER BY stage_num').all(req.params.id);
-  const direction = db.prepare('SELECT * FROM design_direction WHERE project_id = ?').get(req.params.id);
+  const { data: stages } = await db.from('stages').select('*').eq('project_id', req.params.id).order('stage_num');
+  const { data: direction } = await db.from('design_direction').select('*').eq('project_id', req.params.id).maybeSingle();
 
-  res.json({ ...project, stages, direction });
+  res.json({ ...project, stages: stages || [], direction: direction || null });
 });
 
 // DELETE /api/projects/:id
-router.delete('/:id', (req, res) => {
-  db.prepare('DELETE FROM stages WHERE project_id = ?').run(req.params.id);
-  db.prepare('DELETE FROM design_direction WHERE project_id = ?').run(req.params.id);
-  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
+router.delete('/:id', async (req, res) => {
+  // FK cascade handles stages + design_direction
+  const { error } = await db.from('projects').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
 // POST /api/projects/:id/direction
-router.post('/:id/direction', (req, res) => {
+router.post('/:id/direction', async (req, res) => {
   const { design_system, reference_urls, reference_notes, brand_assets } = req.body;
   const projectId = req.params.id;
 
-  const existing = db.prepare('SELECT id FROM design_direction WHERE project_id = ?').get(projectId);
+  const { data: existing } = await db.from('design_direction').select('id').eq('project_id', projectId).maybeSingle();
+
+  const payload = { design_system, reference_urls, reference_notes, brand_assets, updated_at: new Date().toISOString() };
 
   if (existing) {
-    db.prepare(`
-      UPDATE design_direction
-      SET design_system = ?, reference_urls = ?, reference_notes = ?, brand_assets = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE project_id = ?
-    `).run(design_system, reference_urls, reference_notes, brand_assets, projectId);
+    await db.from('design_direction').update(payload).eq('project_id', projectId);
   } else {
-    db.prepare(`
-      INSERT INTO design_direction (id, project_id, design_system, reference_urls, reference_notes, brand_assets)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(uuid(), projectId, design_system, reference_urls, reference_notes, brand_assets);
+    await db.from('design_direction').insert({ id: uuid(), project_id: projectId, ...payload });
   }
 
-  // Advance project stage to 5 (design)
-  db.prepare('UPDATE projects SET stage = 5, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(projectId);
-
+  await db.from('projects').update({ stage: 5, updated_at: new Date().toISOString() }).eq('id', projectId);
   res.json({ ok: true });
 });
 
