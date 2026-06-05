@@ -170,3 +170,5 @@ Return ONLY the markdown content. No explanation.`,
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Carson backend running on :${PORT}`));
+
+export default app;

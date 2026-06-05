@@ -9,11 +9,14 @@ let _db = null;
 
 function init() {
   if (_db) return _db;
-  const saPath = path.resolve(
-    path.join(__dirname, '../..'),
-    process.env.FIREBASE_SERVICE_ACCOUNT
-  );
-  const serviceAccount = JSON.parse(readFileSync(saPath, 'utf-8'));
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  let serviceAccount;
+  if (raw.trim().startsWith('{')) {
+    serviceAccount = JSON.parse(raw);
+  } else {
+    const saPath = path.resolve(path.join(__dirname, '../..'), raw);
+    serviceAccount = JSON.parse(readFileSync(saPath, 'utf-8'));
+  }
   if (!admin.apps.length) {
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
   }
