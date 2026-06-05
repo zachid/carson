@@ -74,6 +74,89 @@ app.post('/api/scrape-reference', async (req, res) => {
   }
 });
 
+// Generate a DESIGN_SYSTEM.md from uploaded reference images
+app.post('/api/generate-designsystem-from-image', upload.array('images', 10), async (req, res) => {
+  if (!req.files?.length) return res.status(400).json({ error: 'No images provided' });
+  const { callModel } = await import('./services/claude.js');
+  try {
+    const imageContent = req.files.map(f => ({
+      type: 'image_url',
+      image_url: { url: `data:${f.mimetype};base64,${f.buffer.toString('base64')}` },
+    }));
+    const content = await callModel([{
+      role: 'user',
+      content: [
+        ...imageContent,
+        { type: 'text', text: `You are a senior design systems engineer. Analyze these reference images and reverse-engineer a complete DESIGN_SYSTEM.md that captures their exact visual language.
+
+Extract real values — colors, fonts, spacing, border radii, button styles, typography hierarchy — and define them as CSS custom properties and component rules.
+
+Use EXACTLY this structure:
+
+# Design System
+**[Brand Name derived from images] · v1.0**
+Replace this file to change the visual language of the entire project.
+
+---
+
+## Identity
+| | |
+|---|---|
+| Typeface | [font name] ([weights]) |
+| Primary accent | \`#hex\` dark · \`#hex\` light |
+| Secondary accent | \`#hex\` dark · \`#hex\` light — use sparingly |
+| Border radius | [value] everywhere |
+| Radius exception | [value] — badges and tags only |
+| Mode | Dark-first. Light via \`body.light\` |
+| Shadows | [none/describe] |
+
+---
+
+## Tokens
+
+\`\`\`css
+/* Dark (default) */
+:root {
+  --bg: #hex;
+  --bg-card: #hex;
+  --bg-hover: #hex;
+  --border: #hex;
+  --border-md: #hex;
+  --border-hi: #hex;
+  --text: #hex;
+  --text-2: #hex;
+  --text-3: #hex;
+  --accent: #hex;
+  --accent-2: #hex;
+}
+
+/* Light */
+body.light {
+  /* light mode overrides */
+}
+\`\`\`
+
+## Typography
+[table with role, size, weight, letter-spacing, line-height, color]
+
+## Spacing
+[4px base unit table]
+
+## Components
+[buttons, badges, cards, inputs — with exact CSS]
+
+## Rules
+[numbered list of design rules]
+
+Return ONLY the markdown. No explanation.` },
+      ],
+    }], 'google/gemini-flash-1.5');
+    res.json({ content });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Generate a DESIGN_SYSTEM.md from a reference URL
 app.post('/api/generate-designsystem', async (req, res) => {
   const { url } = req.body;

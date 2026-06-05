@@ -105,20 +105,43 @@ function downloadHtml(html, filename = 'site.html') {
   URL.revokeObjectURL(url);
 }
 
-export default function Stage05Design({ project, stageData, onComplete, onContinue }) {
+export default function Stage05Design({ project, stageData, onComplete, onContinue, onBack, startFresh }) {
   const existingHtml = stageData?.output ? stripCodeFences(stageData.output) : '';
 
-  const [approved, setApproved] = useState(!!existingHtml);
-  const [status, setStatus] = useState(stageData?.status || 'pending');
-  const [streamText, setStreamText] = useState('');   // raw streaming accumulator
-  const [finalHtml, setFinalHtml] = useState(existingHtml); // only set on done → drives iframe
+  const [approved, setApproved] = useState(startFresh ? false : !!existingHtml);
+  const [status, setStatus] = useState(startFresh ? 'running' : (stageData?.status || 'pending'));
+  const [streamText, setStreamText] = useState('');
+  const [finalHtml, setFinalHtml] = useState(startFresh ? '' : existingHtml);
   const [editMode, setEditMode] = useState(false);
   const [editHtml, setEditHtml] = useState('');
   const iframeRef = useRef(null);
   const streamRef = useRef(null);
+  const autoStarted = useRef(false);
+
+  // Auto-start generation when coming from 04.5
+  useEffect(() => {
+    if (startFresh && !autoStarted.current) {
+      autoStarted.current = true;
+      streamRef.current = streamStage(project.id, 5, {
+        onChunk: (text) => setStreamText(prev => prev + text),
+        onDone: (full) => {
+          const clean = stripCodeFences(full);
+          setFinalHtml(clean);
+          setStreamText('');
+          setStatus('done');
+          setApproved(true);
+          onComplete?.();
+        },
+        onError: (err) => {
+          setStatus('error');
+          setStreamText(`Error: ${err.message}`);
+        },
+      });
+    }
+  }, []);
 
   useEffect(() => {
-    if (stageData?.output) {
+    if (!startFresh && stageData?.output) {
       const clean = stripCodeFences(stageData.output);
       setFinalHtml(clean);
       setStatus(stageData.status || 'done');
@@ -231,7 +254,7 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
         <button className="btn btn-ghost" onClick={() => downloadHtml(finalHtml, `${project.name.replace(/\s+/g,'-').toLowerCase()}.html`)}>↓ Download HTML</button>
         <button className="btn btn-ghost" onClick={() => openPDFFromHtml(finalHtml)}>↓ Save PDF</button>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-ghost" onClick={() => { setApproved(false); setFinalHtml(''); setStatus('pending'); }}>
+        <button className="btn btn-ghost" onClick={() => onBack?.()}>
           ← Regenerate
         </button>
       </div>

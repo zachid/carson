@@ -6,9 +6,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const FAL_URL = 'https://fal.run/openrouter/router/openai/v1/chat/completions';
 
-const DESIGN_SYSTEM = fs.readFileSync(
-  path.join(__dirname, '../../DESIGN_SYSTEM.md'), 'utf-8'
-);
+function getDefaultDesignSystem() {
+  try {
+    return fs.readFileSync(path.join(__dirname, '../../DESIGN_SYSTEM.md'), 'utf-8');
+  } catch {
+    return '# Design System\nDark-first. Manrope typeface. CSS variables for all tokens.';
+  }
+}
 
 function falHeaders() {
   return {
@@ -174,7 +178,7 @@ ${stage03Output}`;
 }
 
 function stage05Prompt({ designSystem, referenceNotes, stage04Output }) {
-  const ds = designSystem || DESIGN_SYSTEM;
+  const ds = designSystem || getDefaultDesignSystem();
   return `Build a complete responsive HTML redesign.
 
 DESIGN SYSTEM — apply every token, rule, and component exactly:
