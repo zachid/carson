@@ -95,6 +95,16 @@ function openPDFFromHtml(html) {
   setTimeout(() => win.print(), 800);
 }
 
+function downloadHtml(html, filename = 'site.html') {
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function Stage05Design({ project, stageData, onComplete, onContinue }) {
   const existingHtml = stageData?.output ? stripCodeFences(stageData.output) : '';
 
@@ -218,6 +228,7 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
         {editMode && (
           <button className="btn btn-primary" onClick={handleEditApply}>Apply Changes</button>
         )}
+        <button className="btn btn-ghost" onClick={() => downloadHtml(finalHtml, `${project.name.replace(/\s+/g,'-').toLowerCase()}.html`)}>↓ Download HTML</button>
         <button className="btn btn-ghost" onClick={() => openPDFFromHtml(finalHtml)}>↓ Save PDF</button>
         <div style={{ flex: 1 }} />
         <button className="btn btn-ghost" onClick={() => { setApproved(false); setFinalHtml(''); setStatus('pending'); }}>

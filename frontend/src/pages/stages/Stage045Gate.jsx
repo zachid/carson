@@ -2,6 +2,16 @@ import { useState } from 'react';
 import useProjectStore from '../../store/projectStore.js';
 import api from '../../api/client.js';
 
+function downloadMd(content, filename = 'DESIGN_SYSTEM.md') {
+  const blob = new Blob([content], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function Stage045Gate({ project, onComplete }) {
   const { saveDirection } = useProjectStore();
   const [designSystemFile, setDesignSystemFile] = useState(null);
@@ -12,10 +22,13 @@ export default function Stage045Gate({ project, onComplete }) {
   const [imageFiles, setImageFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [generatingDS, setGeneratingDS] = useState(false);
 
   const addUrl = () => setRefUrls(u => [...u, '']);
   const updateUrl = (i, v) => setRefUrls(u => u.map((x, idx) => idx === i ? v : x));
   const removeUrl = (i) => setRefUrls(u => u.filter((_, idx) => idx !== i));
+
+  const validUrls = refUrls.filter(u => u.trim());
 
   const handleDesignSystemUpload = (e) => {
     const f = e.target.files[0];
@@ -26,24 +39,33 @@ export default function Stage045Gate({ project, onComplete }) {
     reader.readAsText(f);
   };
 
-  const handleImageUpload = (e) => {
-    setImageFiles(Array.from(e.target.files));
+  const handleImageUpload = (e) => setImageFiles(Array.from(e.target.files));
+
+  // Generate DESIGN_SYSTEM.md from the first reference URL
+  const handleGenerateDS = async () => {
+    const url = validUrls[0];
+    if (!url) return;
+    setGeneratingDS(true);
+    try {
+      const { data } = await api.post('/generate-designsystem', { url });
+      setDesignSystemText(data.content);
+      setDesignSystemFile({ name: `${new URL(url).hostname}-design-system.md` });
+    } catch (err) {
+      alert(err.response?.data?.error || err.message);
+    } finally {
+      setGeneratingDS(false);
+    }
   };
 
   const analyzeReferences = async () => {
     setAnalyzing(true);
     let notes = '';
-
-    const validUrls = refUrls.filter(u => u.trim());
     if (validUrls.length) {
       try {
         const { data } = await api.post('/scrape-reference', { urls: validUrls });
         notes += data.notes;
-      } catch (err) {
-        console.error('URL analysis failed:', err);
-      }
+      } catch (err) { console.error(err); }
     }
-
     if (imageFiles.length) {
       try {
         const form = new FormData();
@@ -53,11 +75,8 @@ export default function Stage045Gate({ project, onComplete }) {
         });
         if (notes) notes += '\n\n---\n\n';
         notes += data.notes;
-      } catch (err) {
-        console.error('Image analysis failed:', err);
-      }
+      } catch (err) { console.error(err); }
     }
-
     setRefNotes(notes);
     setAnalyzing(false);
   };
@@ -67,7 +86,7 @@ export default function Stage045Gate({ project, onComplete }) {
     try {
       await saveDirection(project.id, {
         design_system: designSystemText || null,
-        reference_urls: JSON.stringify(refUrls.filter(u => u.trim())),
+        reference_urls: JSON.stringify(validUrls),
         reference_notes: refNotes || null,
         brand_assets: brandAssets || null,
       });
@@ -89,30 +108,68 @@ export default function Stage045Gate({ project, onComplete }) {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1, background: 'var(--border-md)' }}>
 
-        {/* Design System */}
+        {/* 1. Design System */}
         <div style={{ background: 'var(--bg-card)', padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
             <div>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>1. Design System</div>
               <div className="secondary-text" style={{ fontSize: 12 }}>
-                Currently: {designSystemFile ? designSystemFile.name : 'April (default)'}
+                {designSystemFile
+                  ? <span style={{ color: 'var(--accent)' }}>✓ {designSystemFile.name}</span>
+                  : 'April (default)'}
               </div>
             </div>
-            <label className="btn btn-ghost" style={{ cursor: 'pointer' }}>
-              Upload DESIGN_SYSTEM.md
-              <input type="file" accept=".md,.txt" style={{ display: 'none' }} onChange={handleDesignSystemUpload} />
-            </label>
-          </div>
-          {designSystemText && (
-            <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', padding: 12, fontSize: 12, color: 'var(--text-2)', maxHeight: 120, overflow: 'auto', fontFamily: 'monospace' }}>
-              {designSystemText.slice(0, 400)}…
+            <div style={{ display: 'flex', gap: 8 }}>
+              {designSystemText && (
+                <button
+                  className="btn btn-ghost"
+                  style={{ height: 28, padding: '0 10px', fontSize: 9 }}
+                  onClick={() => downloadMd(designSystemText, designSystemFile?.name || 'DESIGN_SYSTEM.md')}
+                >
+                  ↓ Download
+                </button>
+              )}
+              <label className="btn btn-ghost" style={{ cursor: 'pointer', height: 28, padding: '0 10px', fontSize: 9 }}>
+                Upload .md
+                <input type="file" accept=".md,.txt" style={{ display: 'none' }} onChange={handleDesignSystemUpload} />
+              </label>
             </div>
+          </div>
+
+          {designSystemText && (
+            <textarea
+              className="input"
+              value={designSystemText}
+              onChange={e => setDesignSystemText(e.target.value)}
+              style={{ minHeight: 120, fontFamily: 'monospace', fontSize: 11, marginTop: 8 }}
+            />
           )}
         </div>
 
-        {/* Reference URLs */}
+        {/* 2. Reference URLs */}
         <div style={{ background: 'var(--bg-card)', padding: 24 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>2. Reference URLs</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>2. Reference URLs</div>
+            {validUrls.length > 0 && (
+              <button
+                className="btn btn-primary"
+                style={{ height: 28, padding: '0 12px', fontSize: 9 }}
+                onClick={handleGenerateDS}
+                disabled={generatingDS}
+              >
+                {generatingDS
+                  ? <><span style={{ animation: 'pulse 1s infinite' }}>●</span> Generating…</>
+                  : '✦ Generate Design System'}
+              </button>
+            )}
+          </div>
+
+          {generatingDS && (
+            <div style={{ fontSize: 12, color: 'var(--accent)', marginBottom: 12 }}>
+              Scraping {validUrls[0]} and reverse-engineering design tokens…
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {refUrls.map((url, i) => (
               <div key={i} style={{ display: 'flex', gap: 8 }}>
@@ -131,9 +188,13 @@ export default function Stage045Gate({ project, onComplete }) {
             ))}
           </div>
           <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={addUrl}>+ Add URL</button>
+
+          <div style={{ marginTop: 12, fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
+            <strong style={{ color: 'var(--text-2)' }}>✦ Generate Design System</strong> — scrapes the URL and reverse-engineers its design tokens into a new DESIGN_SYSTEM.md, replacing the default.
+          </div>
         </div>
 
-        {/* Reference Images */}
+        {/* 3. Reference Images */}
         <div style={{ background: 'var(--bg-card)', padding: 24 }}>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>3. Reference Images / Moodboard</div>
           <label className="btn btn-ghost" style={{ cursor: 'pointer' }}>
@@ -141,17 +202,17 @@ export default function Stage045Gate({ project, onComplete }) {
             <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleImageUpload} />
           </label>
           {imageFiles.length > 0 && (
-            <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {imageFiles.map((f, i) => (
-                <div key={i} style={{ fontSize: 11, color: 'var(--text-2)', background: 'var(--bg)', border: '1px solid var(--border-md)', padding: '2px 8px' }}>
+                <span key={i} style={{ fontSize: 11, color: 'var(--text-2)', background: 'var(--bg)', border: '1px solid var(--border-md)', padding: '2px 8px' }}>
                   {f.name}
-                </div>
+                </span>
               ))}
             </div>
           )}
         </div>
 
-        {/* Brand Assets */}
+        {/* 4. Brand Assets */}
         <div style={{ background: 'var(--bg-card)', padding: 24 }}>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>4. Brand Assets Notes</div>
           <textarea
@@ -163,7 +224,7 @@ export default function Stage045Gate({ project, onComplete }) {
           />
         </div>
 
-        {/* Analyzed notes preview */}
+        {/* Reference notes preview */}
         {refNotes && (
           <div style={{ background: 'var(--bg-card)', padding: 24 }}>
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Reference Notes (analyzed)</div>
@@ -177,8 +238,8 @@ export default function Stage045Gate({ project, onComplete }) {
         )}
       </div>
 
-      <div style={{ marginTop: 24, display: 'flex', gap: 12, alignItems: 'center' }}>
-        {(refUrls.some(u => u.trim()) || imageFiles.length > 0) && !refNotes && (
+      <div style={{ marginTop: 24, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        {(validUrls.length > 0 || imageFiles.length > 0) && !refNotes && (
           <button className="btn btn-ghost" onClick={analyzeReferences} disabled={analyzing}>
             {analyzing ? 'Analyzing references…' : 'Analyze References'}
           </button>
