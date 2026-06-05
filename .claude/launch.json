@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "carson-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "3002"],
+      "cwd": "/Users/zachidiner/obsidian/Vaulterwhite/Carson app/frontend",
+      "port": 3002,
+      "autoPort": false
+    }
+  ]
+}
