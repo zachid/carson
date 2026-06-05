@@ -5,50 +5,80 @@ function stripCodeFences(text) {
   if (!text) return text;
   let s = text.trimStart();
   if (s.startsWith('```')) {
-    const firstNewline = s.indexOf('\n');
-    if (firstNewline > -1) s = s.slice(firstNewline + 1);
+    const nl = s.indexOf('\n');
+    if (nl > -1) s = s.slice(nl + 1);
   }
-  const lastFence = s.lastIndexOf('\n```');
-  if (lastFence > -1) s = s.slice(0, lastFence);
+  const last = s.lastIndexOf('\n```');
+  if (last > -1) s = s.slice(0, last);
   return s.trim();
 }
 
 function openPDFFromHtml(html) {
   const win = window.open('', '_blank');
-  win.document.write(html);
-  win.document.close();
+  win.document.write(html); win.document.close();
   setTimeout(() => win.print(), 800);
 }
 
 function downloadHtml(html, filename = 'site.html') {
   const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
 
-export default function Stage05Design({ project, stageData, onComplete, onContinue, onBack, startFresh }) {
+function versionsKey(projectId) { return `carson_s5v_${projectId}`; }
+
+function loadVersions(projectId) {
+  try { return JSON.parse(localStorage.getItem(versionsKey(projectId)) || '[]'); }
+  catch { return []; }
+}
+
+function saveVersions(projectId, versions) {
+  try { localStorage.setItem(versionsKey(projectId), JSON.stringify(versions)); }
+  catch {}
+}
+
+export default function Stage05Design({ project, stageData, onComplete, onContinue, onBack, startFresh, onMounted }) {
   const existingHtml = stageData?.output ? stripCodeFences(stageData.output) : '';
 
-  // If startFresh → always generate from scratch. Otherwise show existing result if any.
+  // ── Version history ─────────────────────────────────────────────────────────
+  const [versions, setVersions] = useState(() => loadVersions(project.id));
+  const [activeV,  setActiveV]  = useState(() => {
+    const v = loadVersions(project.id);
+    return v.length > 0 ? v.length - 1 : 0;
+  });
+
+  // What's shown in the iframe: saved version if available, else existing stageData output
+  const displayHtml = versions[activeV]?.html || existingHtml;
+
+  // ── Generation state ────────────────────────────────────────────────────────
   const [status,     setStatus]     = useState(startFresh ? 'running' : (stageData?.status || 'pending'));
   const [streamText, setStreamText] = useState('');
-  const [finalHtml,  setFinalHtml]  = useState(startFresh ? '' : existingHtml);
   const [editMode,   setEditMode]   = useState(false);
   const [editHtml,   setEditHtml]   = useState('');
   const iframeRef   = useRef(null);
   const autoStarted = useRef(false);
 
+  const addVersion = (html) => {
+    setVersions(prev => {
+      // Don't duplicate if this HTML is already the latest version
+      if (prev.length > 0 && prev[prev.length - 1].html === html) return prev;
+      const updated = [...prev, { label: `v${prev.length + 1}`, html }];
+      saveVersions(project.id, updated);
+      setActiveV(updated.length - 1);
+      return updated;
+    });
+  };
+
   const startGeneration = () => {
     setStatus('running');
     setStreamText('');
-    setFinalHtml('');
     streamStage(project.id, 5, {
       onChunk: (text) => setStreamText(prev => prev + text),
       onDone:  (full) => {
         const clean = stripCodeFences(full);
-        setFinalHtml(clean);
+        addVersion(clean);
         setStreamText('');
         setStatus('done');
         onComplete?.();
@@ -60,18 +90,28 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
     });
   };
 
-  // Auto-start when mounted fresh from 04.5
+  // ── On mount ────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // Always clear the one-shot regen flag immediately
+    onMounted?.();
+
     if (startFresh && !autoStarted.current) {
       autoStarted.current = true;
+      // Archive existing HTML as a version before generating the new one
+      if (existingHtml && !versions.some(v => v.html === existingHtml)) {
+        setVersions(prev => {
+          const updated = [...prev, { label: `v${prev.length + 1}`, html: existingHtml }];
+          saveVersions(project.id, updated);
+          return updated;
+        });
+      }
       startGeneration();
     }
   }, []);
 
-  // Sync result if stageData loads after mount (normal navigation)
+  // Sync stageData if it loads after mount (normal navigation, no regen)
   useEffect(() => {
     if (!startFresh && stageData?.output) {
-      setFinalHtml(stripCodeFences(stageData.output));
       setStatus(stageData.status || 'done');
     }
   }, [stageData]);
@@ -83,7 +123,7 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
     } catch {}
   };
 
-  // ── Streaming view ──────────────────────────────────────────────────────────
+  // ── Streaming ───────────────────────────────────────────────────────────────
   if (status === 'running') {
     return (
       <div style={{ padding: '40px 48px' }}>
@@ -92,31 +132,12 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
           <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 8 }}>Generating…</h2>
           <p className="secondary-text">{streamText.length.toLocaleString()} characters</p>
         </div>
-        <textarea
-          readOnly value={streamText}
-          style={{
-            width: '100%', height: 480,
-            background: 'var(--bg-card)', border: '1px solid var(--border-md)',
-            color: 'var(--text-2)', fontFamily: 'monospace', fontSize: 11,
-            padding: 16, resize: 'none',
-          }}
-        />
-      </div>
-    );
-  }
-
-  // ── Empty / pending (no result yet, not running) ────────────────────────────
-  if (!finalHtml && status !== 'error') {
-    return (
-      <div style={{ padding: '40px 48px', maxWidth: 520 }}>
-        <div className="eyebrow" style={{ marginBottom: 6 }}>Stage 05</div>
-        <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 8 }}>Design Concept</h2>
-        <p className="secondary-text" style={{ marginBottom: 24 }}>
-          Direction is set. Generate the full HTML redesign.
-        </p>
-        <button className="btn btn-primary btn-lg" onClick={startGeneration}>
-          Generate Design →
-        </button>
+        <textarea readOnly value={streamText} style={{
+          width: '100%', height: 480,
+          background: 'var(--bg-card)', border: '1px solid var(--border-md)',
+          color: 'var(--text-2)', fontFamily: 'monospace', fontSize: 11,
+          padding: 16, resize: 'none',
+        }} />
       </div>
     );
   }
@@ -127,13 +148,25 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
       <div style={{ padding: '40px 48px' }}>
         <div className="eyebrow" style={{ marginBottom: 6 }}>Stage 05</div>
         <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 16 }}>Error</h2>
-        <pre style={{ color: 'var(--text-2)', fontFamily: 'monospace', fontSize: 12, marginBottom: 24 }}>{streamText}</pre>
+        <pre style={{ color: 'var(--text-2)', fontFamily: 'monospace', fontSize: 12, marginBottom: 24, whiteSpace: 'pre-wrap' }}>{streamText}</pre>
         <button className="btn btn-primary" onClick={startGeneration}>Retry</button>
       </div>
     );
   }
 
-  // ── Result view ─────────────────────────────────────────────────────────────
+  // ── No output yet ───────────────────────────────────────────────────────────
+  if (!displayHtml) {
+    return (
+      <div style={{ padding: '40px 48px', maxWidth: 520 }}>
+        <div className="eyebrow" style={{ marginBottom: 6 }}>Stage 05</div>
+        <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 8 }}>Design Concept</h2>
+        <p className="secondary-text" style={{ marginBottom: 24 }}>Direction is set. Generate the full HTML redesign.</p>
+        <button className="btn btn-primary btn-lg" onClick={startGeneration}>Generate Design →</button>
+      </div>
+    );
+  }
+
+  // ── Result ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ padding: '40px 48px', display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -146,16 +179,38 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
 
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {/* Version switcher */}
+        {versions.length > 1 && (
+          <div style={{ display: 'flex', gap: 3, marginRight: 8 }}>
+            {versions.map((v, i) => (
+              <button key={i} onClick={() => setActiveV(i)} style={{
+                fontSize: 10, padding: '3px 10px', cursor: 'pointer',
+                background: activeV === i ? 'var(--accent)' : 'var(--bg)',
+                color: activeV === i ? '#fff' : 'var(--text-2)',
+                border: `1px solid ${activeV === i ? 'var(--accent)' : 'var(--border-md)'}`,
+                fontWeight: activeV === i ? 700 : 400,
+              }}>
+                {v.label}
+              </button>
+            ))}
+            <div style={{ width: 1, background: 'var(--border-md)', margin: '0 4px' }} />
+          </div>
+        )}
+
         <button className="btn btn-ghost" onClick={handleThemeToggle}>◑ Toggle Theme</button>
         <button className="btn btn-ghost" onClick={() => iframeRef.current?.requestFullscreen?.()}>⛶ Fullscreen</button>
-        <button className="btn btn-ghost" onClick={() => { setEditHtml(finalHtml); setEditMode(e => !e); }}>
+        <button className="btn btn-ghost" onClick={() => { setEditHtml(displayHtml); setEditMode(e => !e); }}>
           {editMode ? '✓ Close Editor' : '✎ Edit HTML'}
         </button>
         {editMode && (
-          <button className="btn btn-primary" onClick={() => { setFinalHtml(editHtml); setEditMode(false); }}>Apply Changes</button>
+          <button className="btn btn-primary" onClick={() => {
+            // Save edit as a new version
+            addVersion(editHtml);
+            setEditMode(false);
+          }}>Apply & Save</button>
         )}
-        <button className="btn btn-ghost" onClick={() => downloadHtml(finalHtml, `${project.name.replace(/\s+/g, '-').toLowerCase()}.html`)}>↓ Download HTML</button>
-        <button className="btn btn-ghost" onClick={() => openPDFFromHtml(finalHtml)}>↓ Save PDF</button>
+        <button className="btn btn-ghost" onClick={() => downloadHtml(displayHtml, `${project.name.replace(/\s+/g, '-').toLowerCase()}.html`)}>↓ Download HTML</button>
+        <button className="btn btn-ghost" onClick={() => openPDFFromHtml(displayHtml)}>↓ Save PDF</button>
         <div style={{ flex: 1 }} />
         <button className="btn btn-ghost" onClick={() => onBack?.()}>← Regenerate</button>
       </div>
@@ -163,9 +218,9 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <div style={{ flex: 1, border: '1px solid var(--border-md)', minHeight: 600 }}>
           <iframe
-            key={finalHtml.slice(0, 40)}
+            key={`${activeV}-${displayHtml.slice(0, 40)}`}
             ref={iframeRef}
-            srcDoc={finalHtml}
+            srcDoc={displayHtml}
             style={{ width: '100%', height: 800, border: 'none', display: 'block' }}
             title="Design preview"
             sandbox="allow-scripts allow-same-origin"
@@ -173,10 +228,8 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
         </div>
         {editMode && (
           <div style={{ width: 480, flexShrink: 0 }}>
-            <textarea
-              className="input" value={editHtml} onChange={e => setEditHtml(e.target.value)}
-              style={{ height: 800, fontFamily: 'monospace', fontSize: 11, resize: 'none' }}
-            />
+            <textarea className="input" value={editHtml} onChange={e => setEditHtml(e.target.value)}
+              style={{ height: 800, fontFamily: 'monospace', fontSize: 11, resize: 'none' }} />
           </div>
         )}
       </div>

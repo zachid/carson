@@ -33,7 +33,7 @@ function isStageUnlocked(stageNum, project) {
 export default function Project({ projectId, onBack }) {
   const { currentProject, loadProject, refreshCurrentProject } = useProjectStore();
   const [activeStage, setActiveStage] = useState(1);
-  const [directionVersion, setDirectionVersion] = useState(0);
+  const [pendingRegen, setPendingRegen] = useState(false);
 
   useEffect(() => {
     loadProject(projectId);
@@ -67,8 +67,8 @@ export default function Project({ projectId, onBack }) {
       case 2: return <Stage02Audit project={project} stageData={getStageData(project, 2)} onComplete={handleStageComplete} onContinue={() => setActiveStage(3)} />;
       case 3: return <Stage03Analysis project={project} stageData={getStageData(project, 3)} onComplete={handleStageComplete} onContinue={() => setActiveStage(4)} />;
       case 4: return <Stage04Content project={project} stageData={s4data} onComplete={handleStageComplete} onContinue={() => setActiveStage(4.5)} />;
-      case 4.5: return <Stage045Gate project={project} onComplete={() => { handleStageComplete(); setDirectionVersion(v => v + 1); setActiveStage(5); }} />;
-      case 5: return <Stage05Design key={directionVersion} startFresh={directionVersion > 0} project={project} stageData={getStageData(project, 5)} onComplete={handleStageComplete} onContinue={() => setActiveStage(6)} onBack={() => setActiveStage(4.5)} />;
+      case 4.5: return <Stage045Gate project={project} onComplete={() => { handleStageComplete(); setPendingRegen(true); setActiveStage(5); }} />;
+      case 5: return <Stage05Design startFresh={pendingRegen} onMounted={() => setPendingRegen(false)} project={project} stageData={getStageData(project, 5)} onComplete={handleStageComplete} onContinue={() => setActiveStage(6)} onBack={() => setActiveStage(4.5)} />;
       case 6: return <Stage06Export project={project} />;
       default: return null;
     }
