@@ -183,24 +183,26 @@ function stage05Prompt({ designSystem, referenceNotes, colorMode, stage04Output 
     ? 'Include BOTH dark and light modes. Add a visible toggle button (top-right of nav) that switches between them. Default to dark.'
     : 'Use the color mode defined in the design system. Do not add a theme toggle unless the design system specifies one.';
 
-  return `Build a complete responsive HTML redesign.
+  return `Build a complete responsive HTML redesign using ONLY the design system below. Do not invent colors, fonts, or styles — every visual decision must come directly from the tokens provided.
 
-DESIGN SYSTEM — implement every token, color, font, spacing rule, and component style exactly as specified. This is the primary visual language — do not deviate:
+===== DESIGN SYSTEM (primary source of truth — follow exactly) =====
 ${ds}
+===== END DESIGN SYSTEM =====
 
-COLOR MODE INSTRUCTION: ${colorInstruction}
+COLOR MODE: ${colorInstruction}
 
 REFERENCE NOTES (visual direction):
 ${referenceNotes || 'None provided.'}
 
-CONTENT:
+CONTENT TO REDESIGN:
 ${stage04Output}
 
-Requirements:
-- Single HTML file, fully self-contained
-- Load fonts via CDN only (use the typeface specified in the design system)
-- All sections in order: nav · hero · problem · solution · benefits · proof · audience · FAQ · CTA · footer
+Hard requirements:
+- Inline all CSS into a <style> tag — no external stylesheets except font CDN
+- Use the exact CSS variable names from the design system (--bg, --text, --accent, etc.)
+- Use the exact typeface from the design system loaded via Google Fonts CDN
+- All sections: nav · hero · problem · solution · benefits · proof · audience · FAQ · CTA · footer
 - Responsive: mobile-first, breakpoints 640px and 1024px
-- Semantic HTML, WCAG AA
-- Return ONLY the complete HTML. No explanation, no markdown, no code fences.`;
+- Semantic HTML5, WCAG AA contrast
+- Return ONLY the raw HTML document. No explanation, no markdown, no code fences.`;
 }

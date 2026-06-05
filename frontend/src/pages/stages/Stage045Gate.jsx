@@ -146,15 +146,17 @@ export default function Stage045Gate({ project, onComplete }) {
   const designSystemLabel = dsVersions[activeVersion]?.label   || '';
 
   const setDesignSystem = (content, label) => {
+    // Compute new index synchronously BEFORE entering the updater
+    // so setActiveVersion and setDsVersions batch in the same render
+    const existingIdx = dsVersions.findIndex(v => v.label === label);
+    const newIdx = existingIdx >= 0 ? existingIdx : dsVersions.length;
+    setActiveVersion(newIdx);
     setDsVersions(prev => {
-      const idx = prev.findIndex(v => v.label === label);
-      if (idx >= 0) {
+      if (existingIdx >= 0) {
         const next = [...prev];
-        next[idx] = { label, content };
-        setTimeout(() => setActiveVersion(idx), 0);
+        next[existingIdx] = { label, content };
         return next;
       }
-      setTimeout(() => setActiveVersion(prev.length), 0);
       return [...prev, { label, content }];
     });
   };
