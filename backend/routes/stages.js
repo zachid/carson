@@ -93,9 +93,10 @@ async function buildContext(projectId, stageNum, project) {
     case 3: return { stage01Output: await getOutput(1) };
     case 4: return { stage02Output: await getOutput(2), stage03Output: await getOutput(3) };
     case 5: return {
-      designSystem: direction?.design_system,
+      designSystem:   direction?.design_system,
       referenceNotes: direction?.reference_notes,
-      stage04Output: await getOutput(4),
+      colorMode:      direction?.color_mode || 'match',
+      stage04Output:  await getOutput(4),
     };
     default: return {};
   }

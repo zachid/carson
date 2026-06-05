@@ -177,12 +177,18 @@ Gap analysis:
 ${stage03Output}`;
 }
 
-function stage05Prompt({ designSystem, referenceNotes, stage04Output }) {
+function stage05Prompt({ designSystem, referenceNotes, colorMode, stage04Output }) {
   const ds = designSystem || getDefaultDesignSystem();
+  const colorInstruction = colorMode === 'both'
+    ? 'Include BOTH dark and light modes. Add a visible toggle button (top-right of nav) that switches between them. Default to dark.'
+    : 'Use the color mode defined in the design system. Do not add a theme toggle unless the design system specifies one.';
+
   return `Build a complete responsive HTML redesign.
 
-DESIGN SYSTEM — apply every token, rule, and component exactly:
+DESIGN SYSTEM — implement every token, color, font, spacing rule, and component style exactly as specified. This is the primary visual language — do not deviate:
 ${ds}
+
+COLOR MODE INSTRUCTION: ${colorInstruction}
 
 REFERENCE NOTES (visual direction):
 ${referenceNotes || 'None provided.'}
@@ -191,11 +197,10 @@ CONTENT:
 ${stage04Output}
 
 Requirements:
-- Single HTML file, self-contained (CDN for Manrope font only)
+- Single HTML file, fully self-contained
+- Load fonts via CDN only (use the typeface specified in the design system)
 - All sections in order: nav · hero · problem · solution · benefits · proof · audience · FAQ · CTA · footer
-- Dark/light toggle (prefers-color-scheme + manual button)
 - Responsive: mobile-first, breakpoints 640px and 1024px
 - Semantic HTML, WCAG AA
-- No shadows, no border-radius on block elements (badges/tags: 999px only)
-- Return ONLY the complete HTML. No explanation.`;
+- Return ONLY the complete HTML. No explanation, no markdown, no code fences.`;
 }
