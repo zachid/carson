@@ -1,431 +1,762 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import useProjectStore from '../../store/projectStore.js';
 import api from '../../api/client.js';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const RANDOM_NAMES = [
+  'Onyx', 'Vanta', 'Chalk', 'Obsidian', 'Dusk', 'Slate', 'Carbon', 'Void',
+  'Ember', 'Mist', 'Storm', 'Ash', 'Frost', 'Nova', 'Flux', 'Moor', 'Coda',
+  'Lumen', 'Helix', 'Quartz', 'Basalt', 'Crest', 'Prism', 'Sable',
+];
+const randomName = () => RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
+
+const DEFAULT_TOKENS = {
+  name: '',
+  colors: {
+    background: '#0A0A0F', bgCard: '#111118', border: '#1E1E2A',
+    text: '#F0F0F5', accent01: '#6B5CE7', accent02: '#00D4AA',
+  },
+  typography: {
+    headlines: { font: 'Inter', weight: '800' },
+    sub:       { font: 'Inter', weight: '600' },
+    body:      { font: 'Inter', weight: '400' },
+    captions:  { font: 'Inter', weight: '300' },
+  },
+};
+
+function hexToRgba(hex, alpha) {
+  if (!hex?.startsWith('#') || hex.length < 7) return `rgba(128,128,128,${alpha})`;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Shift a hex colour toward white (positive) or black (negative)
+function hexShift(hex, amount) {
+  if (!hex?.startsWith('#') || hex.length < 7) return hex;
+  const clamp = v => Math.min(255, Math.max(0, v));
+  const r = clamp(parseInt(hex.slice(1, 3), 16) + amount);
+  const g = clamp(parseInt(hex.slice(3, 5), 16) + amount);
+  const b = clamp(parseInt(hex.slice(5, 7), 16) + amount);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+
+function buildDesignSystemMd(tokens) {
+  const { name = 'Custom', colors: c = {}, typography: t = {} } = tokens;
+  const bg   = c.background || '#111110';
+  const bgc  = c.bgCard     || '#1A1A19';
+  const bdr  = c.border     || '#252523';
+  const txt  = c.text       || '#F4F3EF';
+  const acc1 = c.accent01   || '#8B5CF6';
+  const acc2 = c.accent02   || '#06B6D4';
+  const font = t.headlines?.font || 'Inter';
+
+  // Derived tokens
+  const bgHover  = hexShift(bgc,  6);
+  const bdrMd    = hexShift(bdr, 12);
+  const bdrHi    = hexShift(bdr, 30);
+  const txt2     = hexToRgba(txt, 0.55);
+  const txt3     = hexToRgba(txt, 0.28);
+
+  // Light mode — invert the dark surfaces, keep accents close
+  const bgLight     = hexShift(txt,  10);   // near-white from text colour
+  const bgCardLight = '#FFFFFF';
+  const bgHoverL    = hexShift(txt,  -10);
+  const bdrLight    = hexToRgba(bg, 0.07);
+  const bdrMdLight  = hexToRgba(bg, 0.13);
+  const bdrHiLight  = hexToRgba(bg, 0.23);
+  const txtLight    = bg;
+  const txt2Light   = hexToRgba(bg, 0.55);
+  const txt3Light   = hexToRgba(bg, 0.28);
+  const acc1Light   = hexShift(acc1, -15);
+  const acc2Light   = hexShift(acc2, -15);
+
+  return `# Design System
+**${name} · v1.0**
+Replace this file to change the visual language of the entire project.
+
+---
+
+## Identity
+| | |
+|---|---|
+| Typeface | ${font} |
+| Primary accent | \`${acc1}\` dark · \`${acc1Light}\` light |
+| Secondary accent | \`${acc2}\` dark · \`${acc2Light}\` light — use sparingly |
+| Border radius | \`0px\` everywhere |
+| Radius exception | \`999px\` — badges and tags only |
+| Mode | Dark-first. Light via \`body.light\` |
+| Shadows | None — depth through borders and layering only |
+
+---
+
+## Tokens
+
+\`\`\`css
+/* Dark (default) */
+:root {
+  --bg:        ${bg};
+  --bg-card:   ${bgc};
+  --bg-hover:  ${bgHover};
+  --border:    ${bdr};
+  --border-md: ${bdrMd};
+  --border-hi: ${bdrHi};
+  --text:      ${txt};
+  --text-2:    ${txt2};
+  --text-3:    ${txt3};
+  --accent:    ${acc1};
+  --accent-2:  ${acc2};
+}
+
+/* Light */
+body.light {
+  --bg:        ${bgLight};
+  --bg-card:   ${bgCardLight};
+  --bg-hover:  ${bgHoverL};
+  --border:    ${bdrLight};
+  --border-md: ${bdrMdLight};
+  --border-hi: ${bdrHiLight};
+  --text:      ${txtLight};
+  --text-2:    ${txt2Light};
+  --text-3:    ${txt3Light};
+  --accent:    ${acc1Light};
+  --accent-2:  ${acc2Light};
+}
+\`\`\`
+
+**Functional** (both modes)
+
+| | |
+|---|---|
+| Success | \`#10B981\` |
+| Danger  | \`#EF4444\` · hover \`#DC2626\` |
+
+---
+
+## Typography
+
+Font import:
+\`\`\`html
+<link href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+\`\`\`
+
+| Role | Size | Weight | Letter-spacing | Line-height | Color |
+|---|---|---|---|---|---|
+| Display / Hero H1 | \`clamp(2.75rem, 5vw, 4rem)\` | ${t.headlines?.weight || '800'} | \`-0.03em\` | 1.1 | \`var(--text)\` |
+| Title / H2 | \`clamp(1.75rem, 3vw, 2.5rem)\` | ${t.sub?.weight || '700'} | \`-0.02em\` | 1.15 | \`var(--text)\` |
+| Card name | \`18px\` | ${t.sub?.weight || '700'} | \`-0.02em\` | — | \`var(--text)\` |
+| Body | \`16px\` | ${t.body?.weight || '400'} | — | 1.65 | \`var(--text)\` |
+| Secondary | \`14px\` | ${t.body?.weight || '400'} | — | 1.60 | \`var(--text-2)\` |
+| Caption | \`13px\` | ${t.captions?.weight || '400'} | — | 1.55 | \`var(--text-2)\` |
+| Label | \`11px uppercase\` | 700 | \`0.10em\` | — | \`var(--text-2)\` |
+| Eyebrow | \`10px uppercase\` | 700 | \`0.16em\` | — | \`var(--accent)\` |
+
+---
+
+## Spacing
+
+4px base unit. All values are multiples of 4.
+
+| Token | px |
+|---|---|
+| --sp-1 | 4 |
+| --sp-2 | 8 |
+| --sp-3 | 12 |
+| --sp-4 | 16 |
+| --sp-6 | 24 |
+| --sp-8 | 32 |
+| --sp-10 | 40 |
+| --sp-12 | 48 |
+| --sp-16 | 64 |
+| --sp-20 | 80 |
+
+---
+
+## Components
+
+### Buttons
+\`border-radius: 0\` · height \`36px\` · ${font} 700 · 10px uppercase · ls 0.10em
+
+\`\`\`css
+.btn-primary { background: var(--accent); border: 1px solid var(--accent); color: #fff; }
+.btn-primary:hover { opacity: 0.88; }
+
+.btn-ghost { background: transparent; border: 1px solid var(--border-md); color: var(--text-2); }
+.btn-ghost:hover { border-color: var(--border-hi); color: var(--text); }
+
+.btn-danger { background: #EF4444; border: 1px solid #EF4444; color: #fff; }
+.btn-danger:hover { background: #DC2626; border-color: #DC2626; }
+
+.btn-lg { height: 44px; padding: 0 24px; font-size: 11px; }
+\`\`\`
+
+### Badges
+\`border-radius: 999px\` · 10px/700 uppercase · padding \`2px 10px\`
+
+\`\`\`css
+.badge-do   { background: rgba(16,185,129,0.10); color: #10B981; border: 1px solid rgba(16,185,129,0.20); }
+.badge-dont { background: rgba(239,68,68,0.10);  color: #EF4444; border: 1px solid rgba(239,68,68,0.20); }
+.badge-new  { background: rgba(139,92,246,0.10); color: var(--accent); border: 1px solid rgba(139,92,246,0.20); }
+\`\`\`
+
+### Cards
+\`border-radius: 0\` · \`border: 1px solid var(--border-md)\` · no shadow
+
+\`\`\`css
+.card { background: var(--bg-card); border: 1px solid var(--border-md); transition: background 0.12s; }
+.card:hover { background: var(--bg-hover); }
+.card-band { height: 3px; background: var(--accent); }
+\`\`\`
+
+### Inputs
+\`border-radius: 0\` · padding \`10px 12px\` · font-size \`13px\`
+
+\`\`\`css
+.input { background: var(--bg); border: 1px solid var(--border-md); color: var(--text); font-family: '${font}', sans-serif; }
+.input:focus { border-color: var(--accent); outline: none; }
+.input::placeholder { color: var(--text-3); }
+\`\`\`
+
+### Grid
+\`\`\`css
+.grid { display: grid; gap: 1px; background: var(--border-md); border: 1px solid var(--border-md); }
+.grid-cell { background: var(--bg-card); padding: 24px 20px; }
+.grid-cell:hover { background: var(--bg-hover); }
+\`\`\`
+
+---
+
+## Motion
+
+| Speed | Duration | Use |
+|---|---|---|
+| Fast | 80ms | Icon hovers, micro state changes |
+| Normal | 150ms | Buttons, inputs, nav |
+| Slow | 300ms | Panels, overlays, cards |
+
+\`\`\`css
+transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+\`\`\`
+
+---
+
+## Layout
+
+| | |
+|---|---|
+| Max width | 1200px |
+| Section padding | \`80px 48px\` desktop · \`48px 20px\` mobile |
+| Header height | 56px |
+| Mobile breakpoint | 768px |
+
+---
+
+## Rules
+
+1. Use only CSS variables from Tokens — no hardcoded colors
+2. ${font} typeface only — load via Google Fonts CDN
+3. Dark-first — always implement both modes
+4. No shadows anywhere
+5. 4px grid — all spacing is a multiple of 4
+6. Zero border-radius on block elements — 999px on badges/tags only
+7. \`--accent\` is primary · \`--accent-2\` is secondary, use sparingly
+8. Functional colors for semantic states only
+9. Eyebrows always in \`--accent\`
+10. Motion is subtle — 80–300ms, ease, color/border/opacity only
+`;
+}
+
+function parseMdTokens(md) {
+  const colors = {};
+  const re = /--(bg|bg-card|border|text|accent|accent-2)(?![\w-]):\s*(#[0-9a-fA-F]{3,8})/g;
+  const map = { 'bg': 'background', 'bg-card': 'bgCard', 'border': 'border', 'text': 'text', 'accent': 'accent01', 'accent-2': 'accent02' };
+  let m;
+  while ((m = re.exec(md)) !== null) {
+    if (map[m[1]] && !colors[map[m[1]]]) colors[map[m[1]]] = m[2];
+  }
+  const fontM = md.match(/\|\s*Typeface\s*\|\s*([^|\n]+)/i);
+  const font = fontM ? fontM[1].trim().split(/[\s,(]/)[0] : 'Inter';
+  return {
+    name: parseBrandName(md),
+    colors: { ...DEFAULT_TOKENS.colors, ...colors },
+    typography: {
+      headlines: { font, weight: '800' },
+      sub:       { font, weight: '600' },
+      body:      { font, weight: '400' },
+      captions:  { font, weight: '300' },
+    },
+  };
+}
+
+function parseBrandName(md) {
+  const m = md.match(/^#\s+(.+)/m);
+  return m ? m[1].replace(/design system/i, '').replace(/·.*$/, '').trim() : '';
+}
+
 function downloadMd(content, filename = 'DESIGN_SYSTEM.md') {
   const blob = new Blob([content], { type: 'text/markdown' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
 
-// ─── Parsers ──────────────────────────────────────────────────────────────────
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
-function parseBrandName(md) {
-  const m = md.match(/^#\s+(.+)/m);
-  if (!m) return 'Custom';
-  return m[1].replace(/design system/i, '').replace(/·.*$/, '').trim() || 'Custom';
-}
-
-function parseTypeface(md) {
-  const m = md.match(/\|\s*Typeface\s*\|\s*([^|\n]+)/i);
-  return m ? m[1].trim() : null;
-}
-
-function parseDesignColors(md) {
-  const tokenMap = [
-    { token: 'bg',       label: 'Background' },
-    { token: 'bg-card',  label: 'Bg Card'    },
-    { token: 'border',   label: 'Border'     },
-    { token: 'text',     label: 'Text'       },
-    { token: 'accent',   label: 'Accent 01'  },
-    { token: 'accent-2', label: 'Accent 02'  },
-  ];
-  return tokenMap.reduce((acc, { token, label }) => {
-    const escaped = token.replace(/-/g, '\\-');
-    const re = new RegExp(`--${escaped}(?![\\w-]):\\s*(#[0-9a-fA-F]{3,8}|rgba?\\([^)]+\\))`);
-    const m = md.match(re);
-    if (m) acc.push({ token, label, value: m[1] });
-    return acc;
-  }, []);
-}
-
-const WEIGHT_NAMES = { '900':'Black','800':'Extrabold','700':'Bold','600':'Semibold','500':'Medium','400':'Regular','300':'Light','200':'Thin' };
-const DEFAULT_ROWS = [
-  { role:'Headlines', w:'700' }, { role:'Sub', w:'600' },
-  { role:'Body',      w:'400' }, { role:'Captions', w:'300' },
+const TABS = [
+  { label: 'Classic Mode' },
+  { label: 'Add a Site URL' },
+  { label: 'Upload an Image' },
+  { label: 'Upload Design.md' },
 ];
 
-function parseTypography(md, typeface) {
-  const fontName = typeface ? typeface.split(/[\s,(]/)[0].toUpperCase() : '—';
-  const section  = md.match(/## Typography\n([\s\S]*?)(\n##|$)/i);
+const SWATCH_KEYS = [
+  { key: 'background', label: 'Background' },
+  { key: 'bgCard',     label: 'Bg Card'    },
+  { key: 'border',     label: 'Border'     },
+  { key: 'text',       label: 'Text'       },
+  { key: 'accent01',   label: 'Accent 01'  },
+  { key: 'accent02',   label: 'Accent 02'  },
+];
 
-  const makeRow = (role, w) => ({ role, font: fontName, weightName: WEIGHT_NAMES[w] || 'Regular', weight: w });
+const TYPO_ROWS = ['headlines', 'sub', 'body', 'captions'];
 
-  if (!section) return DEFAULT_ROWS.map(r => makeRow(r.role, r.w));
-
-  const rows = [];
-  for (const line of section[1].split('\n')) {
-    if (!line.includes('|')) continue;
-    const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-    if (!cells.length || cells[0].includes('---') || /role|name/i.test(cells[0])) continue;
-    const wm = line.match(/\b([1-9]00)\b/);
-    rows.push(makeRow(cells[0], wm ? wm[1] : '400'));
-  }
-  return (rows.length ? rows : DEFAULT_ROWS.map(r => makeRow(r.role, r.w))).slice(0, 4);
-}
-
-// ─── Summary card ─────────────────────────────────────────────────────────────
-
-function DesignSystemSummary({ content }) {
-  const brand    = parseBrandName(content);
-  const typeface = parseTypeface(content);
-  const colors   = parseDesignColors(content);
-  const typo     = parseTypography(content, typeface);
-
-  return (
-    <div style={{
-      background: 'var(--bg)', border: '1px solid var(--border-md)',
-      padding: '20px 24px', marginBottom: 12,
-    }}>
-      {/* Header */}
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-2)', marginBottom: 20 }}>
-        Custom Design System / {brand}
-      </div>
-
-      <div style={{ display: 'flex', gap: 48, flexWrap: 'wrap' }}>
-        {/* Colors */}
-        {colors.length > 0 && (
-          <div style={{ flex: '1 1 auto' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 12 }}>
-              Colors
-            </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {colors.map(c => (
-                <div key={c.token} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{
-                    width: 56, height: 56,
-                    background: c.value,
-                    border: '1px solid rgba(255,255,255,0.07)',
-                  }} />
-                  <div style={{ fontSize: 9, color: 'var(--text-3)', lineHeight: 1.3, maxWidth: 56 }}>{c.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Typography */}
-        {typo.length > 0 && (
-          <div style={{ flex: '1 1 auto' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 12 }}>
-              Typography
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {typo.map(row => (
-                <div key={row.role} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-                  <span style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', width: 72, flexShrink: 0 }}>{row.role}</span>
-                  <span style={{ fontSize: 10, color: 'var(--text-2)', fontWeight: 700, letterSpacing: '0.05em', width: 64, flexShrink: 0 }}>{row.font}</span>
-                  <span style={{ fontSize: 10, color: 'var(--text-2)', letterSpacing: '0.15em', width: 52, flexShrink: 0 }}>ABCDE</span>
-                  <span style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', width: 72, flexShrink: 0 }}>{row.weightName}</span>
-                  <span style={{ fontSize: 9, color: 'var(--text-3)', fontFamily: 'monospace' }}>{row.weight}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Main component ────────────────────────────────────────────────────────────
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export default function Stage045Gate({ project, onComplete }) {
   const { saveDirection } = useProjectStore();
 
-  // Version history — "Saved" = already in Firestore, new = just generated/uploaded
-  const savedDS = project?.direction?.design_system || null;
-  const [dsVersions, setDsVersions] = useState(() =>
-    savedDS ? [{ label: 'Saved', content: savedDS }] : []
-  );
-  const [activeVersion, setActiveVersion] = useState(0);
+  const [activeTab,    setActiveTab]    = useState(0);
+  const [previewReady, setPreviewReady] = useState(false);
+  const [tokens,       setTokens]       = useState(DEFAULT_TOKENS);
+  const [lightDark,    setLightDark]    = useState(false);
+  const [generating,   setGenerating]   = useState(false);
+  const [genError,     setGenError]     = useState('');
+  const [saving,       setSaving]       = useState(false);
+  const [panelTab,     setPanelTab]     = useState(0); // 0 = visual, 1 = markdown
 
-  const designSystemText  = dsVersions[activeVersion]?.content || '';
-  const designSystemLabel = dsVersions[activeVersion]?.label   || '';
+  // Per-tab state
+  const [refUrl,      setRefUrl]      = useState('');
+  const [imageFile,   setImageFile]   = useState(null);
+  const [imagePreview,setImagePreview]= useState('');
+  const [dragOver,    setDragOver]    = useState(false);
+  const [mdError,     setMdError]     = useState('');
 
-  const setDesignSystem = (content, label) => {
-    // Compute new index synchronously BEFORE entering the updater
-    // so setActiveVersion and setDsVersions batch in the same render
-    const existingIdx = dsVersions.findIndex(v => v.label === label);
-    const newIdx = existingIdx >= 0 ? existingIdx : dsVersions.length;
-    setActiveVersion(newIdx);
-    setDsVersions(prev => {
-      if (existingIdx >= 0) {
-        const next = [...prev];
-        next[existingIdx] = { label, content };
-        return next;
-      }
-      return [...prev, { label, content }];
-    });
-  };
+  // Color picker refs — one per swatch
+  const cpBg     = useRef(null); const cpBgCard = useRef(null);
+  const cpBorder = useRef(null); const cpText   = useRef(null);
+  const cpAcc1   = useRef(null); const cpAcc2   = useRef(null);
+  const cpRefs   = { background: cpBg, bgCard: cpBgCard, border: cpBorder, text: cpText, accent01: cpAcc1, accent02: cpAcc2 };
 
-  const updateActiveContent = (content) => {
-    setDsVersions(prev => prev.map((v, i) => i === activeVersion ? { ...v, content } : v));
-  };
+  const imageInputRef = useRef(null);
+  const mdInputRef    = useRef(null);
 
-  const [refUrls,    setRefUrls]    = useState(['']);
-  const [refNotes,   setRefNotes]   = useState('');
-  const [brandAssets,setBrandAssets]= useState('');
-  const [imageFiles, setImageFiles] = useState([]);
-  const [colorMode,  setColorMode]  = useState('match');
+  // Pre-populate if direction already exists
+  useEffect(() => {
+    const dir = project?.direction;
+    if (dir?.tokens) {
+      setTokens(dir.tokens);
+      setPreviewReady(true);
+      setLightDark(dir.color_mode === 'both');
+    }
+  }, []);
 
-  const [loading,         setLoading]         = useState(false);
-  const [analyzing,       setAnalyzing]       = useState(false);
-  const [generatingDSUrl, setGeneratingDSUrl] = useState(false);
-  const [generatingDSImg, setGeneratingDSImg] = useState(false);
+  // ── Token helpers ──────────────────────────────────────────────────────────
+  const setColor = (key, value) =>
+    setTokens(prev => ({ ...prev, colors: { ...prev.colors, [key]: value } }));
 
-  const addUrl    = ()      => setRefUrls(u => [...u, '']);
-  const updateUrl = (i, v)  => setRefUrls(u => u.map((x, idx) => idx === i ? v : x));
-  const removeUrl = (i)     => setRefUrls(u => u.filter((_, idx) => idx !== i));
-  const validUrls = refUrls.filter(u => u.trim());
+  const setTypo = (role, field, value) =>
+    setTokens(prev => ({ ...prev, typography: { ...prev.typography, [role]: { ...prev.typography[role], [field]: value } } }));
 
-  const handleDesignSystemUpload = (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setDesignSystem(ev.target.result, f.name);
-    reader.readAsText(f);
-  };
+  const applyTokens = (t) => { setTokens(t); setPreviewReady(true); setGenError(''); };
 
-  const handleImageUpload = (e) => setImageFiles(Array.from(e.target.files));
+  // ── Tab actions ────────────────────────────────────────────────────────────
 
-  const handleGenerateDSFromUrl = async () => {
-    const url = validUrls[0]; if (!url) return;
-    setGeneratingDSUrl(true);
+  const handleClassic = async () => {
+    setGenerating(true); setGenError('');
     try {
-      const { data } = await api.post('/generate-designsystem', { url });
-      setDesignSystem(data.content, new URL(url).hostname);
-    } catch (err) { alert(err.response?.data?.error || err.message); }
-    finally { setGeneratingDSUrl(false); }
+      const { data } = await api.post(`/projects/${project.id}/direction/generate-classic`);
+      applyTokens(data.tokens);
+    } catch (err) { setGenError(err.response?.data?.error || err.message); }
+    finally { setGenerating(false); }
   };
 
-  const handleGenerateDSFromImages = async () => {
-    if (!imageFiles.length) return;
-    setGeneratingDSImg(true);
+  const handleUrlGenerate = async () => {
+    if (!refUrl.trim()) return;
+    setGenerating(true); setGenError('');
+    try {
+      const { data } = await api.post(`/projects/${project.id}/direction/generate-url`, { url: refUrl.trim() });
+      applyTokens(data.tokens);
+    } catch (err) { setGenError(err.response?.data?.error || err.message); }
+    finally { setGenerating(false); }
+  };
+
+  const handleImageFile = (file) => {
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleImageExtract = async () => {
+    if (!imageFile) return;
+    setGenerating(true); setGenError('');
     try {
       const form = new FormData();
-      imageFiles.forEach(f => form.append('images', f));
-      const { data } = await api.post('/generate-designsystem-from-image', form, {
+      form.append('images', imageFile);
+      const { data } = await api.post(`/projects/${project.id}/direction/generate-image`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      const label = imageFiles.length === 1 ? imageFiles[0].name : `${imageFiles.length} images`;
-      setDesignSystem(data.content, label);
-    } catch (err) { alert(err.response?.data?.error || err.message); }
-    finally { setGeneratingDSImg(false); }
+      applyTokens(data.tokens);
+    } catch (err) { setGenError(err.response?.data?.error || err.message); }
+    finally { setGenerating(false); }
   };
 
-  const analyzeReferences = async () => {
-    setAnalyzing(true);
-    let notes = '';
-    if (validUrls.length) {
-      try { const { data } = await api.post('/scrape-reference', { urls: validUrls }); notes += data.notes; }
-      catch (err) { console.error(err); }
-    }
-    if (imageFiles.length) {
+  const handleMdUpload = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setMdError('');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
       try {
-        const form = new FormData();
-        imageFiles.forEach(f => form.append('images', f));
-        const { data } = await api.post(`/projects/${project.id}/analyze-images`, form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        if (notes) notes += '\n\n---\n\n';
-        notes += data.notes;
-      } catch (err) { console.error(err); }
-    }
-    setRefNotes(notes);
-    setAnalyzing(false);
+        const parsed = parseMdTokens(ev.target.result);
+        applyTokens(parsed);
+      } catch {
+        setMdError('Could not parse design tokens from this file.');
+      }
+    };
+    reader.readAsText(file);
   };
 
+  // ── Confirm ────────────────────────────────────────────────────────────────
   const handleConfirm = async () => {
-    setLoading(true);
+    setSaving(true);
     try {
+      const designSystemMd = buildDesignSystemMd(tokens);
       await saveDirection(project.id, {
-        design_system:   designSystemText || null,
-        reference_urls:  JSON.stringify(validUrls),
-        reference_notes: refNotes || null,
-        brand_assets:    brandAssets || null,
-        color_mode:      colorMode,
+        design_system:   designSystemMd,
+        tokens:          tokens,
+        reference_urls:  refUrl ? JSON.stringify([refUrl]) : null,
+        reference_notes: null,
+        brand_assets:    null,
+        color_mode:      lightDark ? 'both' : 'match',
       });
       onComplete?.();
     } catch (err) { alert(err.message); }
-    finally { setLoading(false); }
+    finally { setSaving(false); }
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-  return (
-    <div style={{ padding: '40px 48px', maxWidth: 760 }}>
-      <div style={{ marginBottom: 36 }}>
-        <div className="eyebrow" style={{ marginBottom: 6 }}>Design Direction</div>
-        <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 8 }}>Before We Build</h2>
-        <p className="secondary-text">Set the visual direction for Stage 05. None of these are required — defaults apply if skipped.</p>
+  // ── Render helpers ─────────────────────────────────────────────────────────
+
+  const renderTabInput = () => {
+    switch (activeTab) {
+      // ── Tab 0: Classic Mode ──────────────────────────────────────────────
+      case 0:
+        if (!previewReady) {
+          return (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200 }}>
+              <button className="btn btn-primary btn-lg" onClick={handleClassic} disabled={generating}>
+                {generating ? <><span style={{ animation: 'pulse 1s infinite' }}>●</span> Generating…</> : 'GENERATE NEW DESIGN'}
+              </button>
+            </div>
+          );
+        }
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <button className="btn btn-ghost" onClick={handleClassic} disabled={generating} style={{ fontSize: 11 }}>
+              {generating ? '● Regenerating…' : '↺ Regenerate from brand audit'}
+            </button>
+          </div>
+        );
+
+      // ── Tab 1: URL Reference ─────────────────────────────────────────────
+      case 1:
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="input" type="url" placeholder="ADD URL…"
+                value={refUrl} onChange={e => setRefUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleUrlGenerate()}
+                style={{ flex: 1 }}
+              />
+              <button className="btn btn-ghost" onClick={handleUrlGenerate} disabled={generating || !refUrl.trim()}>
+                {generating ? '● Generating…' : 'GENERATE STYLE'}
+              </button>
+            </div>
+          </div>
+        );
+
+      // ── Tab 2: Upload Image ──────────────────────────────────────────────
+      case 2:
+        return (
+          <div style={{ marginBottom: 16 }}>
+            {!imageFile ? (
+              <div
+                onClick={() => imageInputRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); handleImageFile(e.dataTransfer.files[0]); }}
+                style={{
+                  border: `1px dashed ${dragOver ? 'var(--accent)' : 'var(--border-md)'}`,
+                  padding: '32px 24px', textAlign: 'center', cursor: 'pointer',
+                  background: dragOver ? 'var(--bg-hover)' : 'transparent',
+                  transition: 'all 0.12s',
+                }}
+              >
+                <div style={{ fontSize: 20, marginBottom: 8, opacity: 0.4 }}>↑</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  Drop image or click to upload
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>JPG · PNG · WEBP</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <img src={imagePreview} alt="preview" style={{ width: 56, height: 56, objectFit: 'cover', border: '1px solid var(--border-md)' }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>{imageFile.name}</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary" onClick={handleImageExtract} disabled={generating} style={{ fontSize: 11 }}>
+                      {generating ? '● Extracting…' : 'EXTRACT STYLE'}
+                    </button>
+                    <button className="btn btn-ghost" onClick={() => { setImageFile(null); setImagePreview(''); }} style={{ fontSize: 11 }}>
+                      ✕ Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleImageFile(e.target.files[0])} />
+          </div>
+        );
+
+      // ── Tab 3: Upload Design.md ──────────────────────────────────────────
+      case 3:
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <label className="btn btn-ghost" style={{ cursor: 'pointer', display: 'inline-flex' }}>
+              UPLOAD DESIGN.MD
+              <input ref={mdInputRef} type="file" accept=".md,.txt" style={{ display: 'none' }} onChange={handleMdUpload} />
+            </label>
+            {mdError && <div style={{ marginTop: 8, fontSize: 11, color: '#ef4444' }}>{mdError}</div>}
+          </div>
+        );
+
+      default: return null;
+    }
+  };
+
+  // ── Design System Preview Panel ────────────────────────────────────────────
+  const renderPreviewPanel = () => (
+    <div style={{ border: '1px solid var(--border-md)', background: 'var(--bg-card)' }}>
+      {/* Panel header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 16px', borderBottom: '1px solid var(--border)',
+      }}>
+        {/* Tabs */}
+        <div style={{ display: 'flex' }}>
+          {['Design System', 'Markdown'].map((label, i) => (
+            <button key={i} onClick={() => setPanelTab(i)} style={{
+              padding: '11px 14px', background: 'transparent', border: 'none',
+              borderBottom: panelTab === i ? '2px solid var(--accent)' : '2px solid transparent',
+              color: panelTab === i ? 'var(--text)' : 'var(--text-3)',
+              fontWeight: panelTab === i ? 700 : 400,
+              fontSize: 11, cursor: 'pointer', letterSpacing: '0.04em',
+              transition: 'color 0.12s, border-color 0.12s',
+              marginBottom: -1,
+            }}>{label}</button>
+          ))}
+        </div>
+        <button className="btn btn-ghost" style={{ height: 26, padding: '0 10px', fontSize: 9 }}
+          onClick={() => downloadMd(buildDesignSystemMd(tokens), `${tokens.name || 'design-system'}.md`)}>
+          ↓ Download .md
+        </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, background: 'var(--border-md)' }}>
+      {/* ── Markdown view ── */}
+      {panelTab === 1 && (
+        <textarea
+          readOnly
+          value={buildDesignSystemMd(tokens)}
+          style={{
+            width: '100%', minHeight: 360, padding: 20,
+            background: 'var(--bg)', color: 'var(--text-2)',
+            fontFamily: 'monospace', fontSize: 11, lineHeight: 1.7,
+            border: 'none', resize: 'vertical',
+          }}
+        />
+      )}
 
-        {/* ── 1. Design System ── */}
-        <div style={{ background: 'var(--bg-card)', padding: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>1. Design System</div>
-              <div className="secondary-text" style={{ fontSize: 12 }}>
-                {designSystemText
-                  ? <span style={{ color: 'var(--accent)' }}>✓ {designSystemLabel}</span>
-                  : 'April (default)'}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {designSystemText && (
-                <button className="btn btn-ghost" style={{ height: 28, padding: '0 10px', fontSize: 9 }}
-                  onClick={() => downloadMd(designSystemText, `${designSystemLabel}.md`)}>
-                  ↓ Download
-                </button>
-              )}
-              <label className="btn btn-ghost" style={{ cursor: 'pointer', height: 28, padding: '0 10px', fontSize: 9 }}>
-                Upload .md
-                <input type="file" accept=".md,.txt" style={{ display: 'none' }} onChange={handleDesignSystemUpload} />
-              </label>
-            </div>
-          </div>
+      {/* ── Visual view ── */}
+      {panelTab === 0 && <>
+      {/* Name field */}
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          className="input"
+          placeholder="NAME / ADD RANDOM"
+          value={tokens.name}
+          onChange={e => setTokens(prev => ({ ...prev, name: e.target.value }))}
+          style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700 }}
+        />
+        <button className="btn btn-ghost" style={{ height: 32, padding: '0 12px', fontSize: 10, flexShrink: 0 }}
+          onClick={() => setTokens(prev => ({ ...prev, name: randomName() }))}>
+          Random
+        </button>
+      </div>
 
-          {/* Version switcher */}
-          {dsVersions.length > 1 && (
-            <div style={{ display: 'flex', gap: 4, marginBottom: 14 }}>
-              {dsVersions.map((v, i) => (
-                <button key={i} onClick={() => setActiveVersion(i)} style={{
-                  fontSize: 10, padding: '3px 12px', cursor: 'pointer',
-                  background: activeVersion === i ? 'var(--accent)' : 'var(--bg)',
-                  color: activeVersion === i ? '#fff' : 'var(--text-2)',
-                  border: `1px solid ${activeVersion === i ? 'var(--accent)' : 'var(--border-md)'}`,
-                  fontWeight: activeVersion === i ? 700 : 400,
-                }}>
-                  {v.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Summary card */}
-          {designSystemText && <DesignSystemSummary content={designSystemText} />}
-
-          {/* Editable textarea */}
-          {designSystemText && (
-            <textarea className="input" value={designSystemText} onChange={e => updateActiveContent(e.target.value)}
-              style={{ minHeight: 120, fontFamily: 'monospace', fontSize: 11 }} />
-          )}
-
-          {/* Color mode */}
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>Color Mode</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[
-                { value: 'match', label: 'Match design system',       desc: 'Use the mode defined in the design system' },
-                { value: 'both',  label: 'Dark + light with toggle',  desc: 'Generate both modes with a toggle button'  },
-              ].map(opt => (
-                <button key={opt.value} onClick={() => setColorMode(opt.value)} style={{
-                  flex: 1, padding: '10px 14px', cursor: 'pointer', textAlign: 'left',
-                  background: colorMode === opt.value ? 'var(--bg)' : 'transparent',
-                  border: `1px solid ${colorMode === opt.value ? 'var(--accent)' : 'var(--border-md)'}`,
-                  transition: 'border-color 0.12s',
-                }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: colorMode === opt.value ? 'var(--accent)' : 'var(--text)', marginBottom: 3 }}>
-                    {colorMode === opt.value ? '● ' : '○ '}{opt.label}
-                  </div>
-                  <div style={{ fontSize: 10, color: 'var(--text-3)', lineHeight: 1.4 }}>{opt.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ── 2. Reference URLs ── */}
-        <div style={{ background: 'var(--bg-card)', padding: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>2. Reference URLs</div>
-            {validUrls.length > 0 && (
-              <button className="btn btn-primary" style={{ height: 28, padding: '0 12px', fontSize: 9 }}
-                onClick={handleGenerateDSFromUrl} disabled={generatingDSUrl}>
-                {generatingDSUrl ? <><span style={{ animation: 'pulse 1s infinite' }}>●</span> Generating…</> : '✦ Generate Design System'}
-              </button>
-            )}
-          </div>
-          {generatingDSUrl && (
-            <div style={{ fontSize: 12, color: 'var(--accent)', marginBottom: 12 }}>
-              Scraping {validUrls[0]} and reverse-engineering design tokens…
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {refUrls.map((url, i) => (
-              <div key={i} style={{ display: 'flex', gap: 8 }}>
-                <input className="input" placeholder="https://example.com" value={url}
-                  onChange={e => updateUrl(i, e.target.value)} type="url" style={{ flex: 1 }} />
-                {refUrls.length > 1 && (
-                  <button className="btn btn-ghost" style={{ padding: '0 10px' }} onClick={() => removeUrl(i)}>✕</button>
-                )}
+      {/* Two-column: Colors + Typography */}
+      <div style={{ display: 'flex', gap: 0 }}>
+        {/* Colors */}
+        <div style={{ flex: 1, padding: '16px', borderRight: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Colors</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {SWATCH_KEYS.map(({ key, label }) => (
+              <div key={key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                {/* Swatch + pencil */}
+                <div
+                  onClick={() => cpRefs[key].current?.click()}
+                  style={{
+                    width: 52, height: 52, position: 'relative',
+                    background: tokens.colors[key] || '#333',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    cursor: 'pointer', flexShrink: 0,
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', inset: 0, display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, opacity: 0.5,
+                  }}>✏</span>
+                </div>
+                <input
+                  ref={cpRefs[key]} type="color"
+                  value={tokens.colors[key] || '#000000'}
+                  onChange={e => setColor(key, e.target.value)}
+                  style={{ position: 'absolute', opacity: 0, width: 1, height: 1, pointerEvents: 'none' }}
+                />
+                <div style={{ fontSize: 9, color: 'var(--text-3)', textAlign: 'center', maxWidth: 52, lineHeight: 1.3 }}>{label}</div>
               </div>
             ))}
           </div>
-          <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={addUrl}>+ Add URL</button>
         </div>
 
-        {/* ── 3. Reference Images ── */}
-        <div style={{ background: 'var(--bg-card)', padding: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>3. Reference Images / Moodboard</div>
-            {imageFiles.length > 0 && (
-              <button className="btn btn-primary" style={{ height: 28, padding: '0 12px', fontSize: 9 }}
-                onClick={handleGenerateDSFromImages} disabled={generatingDSImg}>
-                {generatingDSImg ? <><span style={{ animation: 'pulse 1s infinite' }}>●</span> Generating…</> : '✦ Generate Design System'}
-              </button>
-            )}
+        {/* Typography */}
+        <div style={{ flex: 1, padding: '16px' }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Typography</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {TYPO_ROWS.map(role => (
+              <div key={role} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', width: 64, flexShrink: 0 }}>{role}</span>
+                <input
+                  className="input"
+                  value={tokens.typography[role]?.font || ''}
+                  onChange={e => setTypo(role, 'font', e.target.value)}
+                  placeholder="Font"
+                  style={{ width: 110, flexShrink: 0, height: 26, fontSize: 11, fontWeight: 700 }}
+                />
+                <span style={{ fontSize: 10, color: 'var(--text-2)', letterSpacing: '0.12em', width: 44, flexShrink: 0, textAlign: 'center' }}>ABCDE</span>
+                <input
+                  className="input"
+                  value={tokens.typography[role]?.weight || ''}
+                  onChange={e => setTypo(role, 'weight', e.target.value)}
+                  placeholder="Wt"
+                  style={{ width: 48, flexShrink: 0, height: 26, fontSize: 11, textAlign: 'center' }}
+                />
+              </div>
+            ))}
           </div>
-          {generatingDSImg && (
-            <div style={{ fontSize: 12, color: 'var(--accent)', marginBottom: 12 }}>
-              Analyzing images and extracting design tokens…
-            </div>
-          )}
-          <label className="btn btn-ghost" style={{ cursor: 'pointer' }}>
-            {imageFiles.length ? `${imageFiles.length} image${imageFiles.length > 1 ? 's' : ''} selected` : 'Upload Images'}
-            <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleImageUpload} />
-          </label>
-          {imageFiles.length > 0 && (
-            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {imageFiles.map((f, i) => (
-                <span key={i} style={{ fontSize: 11, color: 'var(--text-2)', background: 'var(--bg)', border: '1px solid var(--border-md)', padding: '2px 8px' }}>
-                  {f.name}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
+      </div>
+      </>}
+    </div>
+  );
 
-        {/* ── 4. Brand Assets ── */}
-        <div style={{ background: 'var(--bg-card)', padding: 24 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>4. Brand Assets Notes</div>
-          <textarea className="input"
-            placeholder="Describe logo, brand colors, fonts, or any existing assets to incorporate…"
-            value={brandAssets} onChange={e => setBrandAssets(e.target.value)}
-            style={{ minHeight: 80 }} />
-        </div>
+  // ── Root render ────────────────────────────────────────────────────────────
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
 
-        {/* Reference notes */}
-        {refNotes && (
-          <div style={{ background: 'var(--bg-card)', padding: 24 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Reference Notes (analyzed)</div>
-            <textarea className="input" value={refNotes} onChange={e => setRefNotes(e.target.value)}
-              style={{ minHeight: 120, fontFamily: 'monospace', fontSize: 12 }} />
-          </div>
-        )}
+      {/* Zone 1 — Header */}
+      <div style={{ padding: '28px 40px 0', flexShrink: 0 }}>
+        <div className="eyebrow">Add Design Direction</div>
       </div>
 
-      <div style={{ marginTop: 24, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {(validUrls.length > 0 || imageFiles.length > 0) && !refNotes && (
-          <button className="btn btn-ghost" onClick={analyzeReferences} disabled={analyzing}>
-            {analyzing ? 'Analyzing references…' : 'Analyze References'}
-          </button>
+      {/* Zone 2 — Tab Bar */}
+      <div style={{ padding: '16px 40px 0', flexShrink: 0, borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: 0 }}>
+          {TABS.map((tab, i) => (
+            <button
+              key={i}
+              onClick={() => setActiveTab(i)}
+              style={{
+                padding: '8px 16px',
+                background: 'transparent', border: 'none',
+                borderBottom: activeTab === i ? '2px solid var(--accent)' : '2px solid transparent',
+                color: activeTab === i ? 'var(--text)' : 'var(--text-3)',
+                fontWeight: activeTab === i ? 700 : 400,
+                fontSize: 12, cursor: 'pointer',
+                letterSpacing: '0.04em',
+                transition: 'color 0.12s, border-color 0.12s',
+                marginBottom: -1,
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Zone 3 — Content Area (scrollable) */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 40px' }}>
+        {/* Error */}
+        {genError && (
+          <div style={{ marginBottom: 16, padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', fontSize: 12, color: '#ef4444' }}>
+            {genError}
+          </div>
         )}
-        <button className="btn btn-primary btn-lg" onClick={handleConfirm} disabled={loading}>
-          {loading ? 'Saving…' : 'Confirm & Build →'}
+
+        {/* Tab-specific input area */}
+        {renderTabInput()}
+
+        {/* Design System Preview Panel — shared, persists across tabs */}
+        {previewReady && renderPreviewPanel()}
+      </div>
+
+      {/* Zone 4 — Footer (sticky) */}
+      <div style={{
+        flexShrink: 0, borderTop: '1px solid var(--border)',
+        background: 'var(--bg-card)', padding: '14px 40px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        {/* Light+dark toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            onClick={() => setLightDark(v => !v)}
+            style={{
+              width: 36, height: 20, borderRadius: 10, position: 'relative', cursor: 'pointer',
+              background: lightDark ? 'var(--accent)' : 'var(--border-md)',
+              transition: 'background 0.2s',
+            }}
+          >
+            <div style={{
+              position: 'absolute', top: 2, left: lightDark ? 18 : 2,
+              width: 16, height: 16, borderRadius: '50%', background: '#fff',
+              transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+            }} />
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 600, color: lightDark ? 'var(--text)' : 'var(--text-3)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Create Light + Dark Mode
+          </span>
+        </div>
+
+        {/* Confirm */}
+        <button
+          className="btn btn-primary btn-lg"
+          onClick={handleConfirm}
+          disabled={!previewReady || saving}
+          style={{ opacity: previewReady ? 1 : 0.4, pointerEvents: previewReady ? 'auto' : 'none' }}
+        >
+          {saving ? 'Saving…' : 'Confirm and Build →'}
         </button>
       </div>
     </div>

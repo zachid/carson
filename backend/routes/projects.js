@@ -93,12 +93,12 @@ router.delete('/:id', async (req, res) => {
 
 // POST /api/projects/:id/direction
 router.post('/:id/direction', async (req, res) => {
-  const { design_system, reference_urls, reference_notes, brand_assets, color_mode } = req.body;
+  const { design_system, reference_urls, reference_notes, brand_assets, color_mode, tokens } = req.body;
   const projectId = req.params.id;
   try {
     await db.collection('projects').doc(projectId)
       .collection('direction').doc('main')
-      .set({ design_system, reference_urls, reference_notes, brand_assets, color_mode, updated_at: now() }, { merge: true });
+      .set({ design_system, reference_urls, reference_notes, brand_assets, color_mode, tokens, updated_at: now() }, { merge: true });
 
     await db.collection('projects').doc(projectId)
       .update({ stage: 5, updated_at: now() });

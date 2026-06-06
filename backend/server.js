@@ -51,6 +51,106 @@ app.post('/api/projects/:id/analyze-images', upload.array('images', 10), async (
   }
 });
 
+// ── Token extraction helper ────────────────────────────────────────────────────
+const TOKEN_SCHEMA = `Return ONLY a valid JSON object — no explanation, no markdown, no code fences:
+{
+  "name": "2-3 word evocative name (e.g. 'Carbon Wave', 'Ivory Stack')",
+  "colors": {
+    "background": "#hex — main page background",
+    "bgCard":     "#hex — card/panel surface, slightly lighter than bg",
+    "border":     "#hex — subtle divider/border",
+    "text":       "#hex — primary text, high contrast on bg",
+    "accent01":   "#hex — primary CTA/highlight color",
+    "accent02":   "#hex — secondary accent, different hue"
+  },
+  "typography": {
+    "headlines": { "font": "Google Fonts name", "weight": "800" },
+    "sub":       { "font": "Google Fonts name", "weight": "600" },
+    "body":      { "font": "Google Fonts name", "weight": "400" },
+    "captions":  { "font": "Google Fonts name", "weight": "300" }
+  }
+}`;
+
+async function extractTokens(messages, model) {
+  const { callModel } = await import('./services/claude.js');
+  const raw = await callModel(messages, model);
+  const cleaned = raw.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+  return JSON.parse(cleaned);
+}
+
+// Classic Mode — generate design system from brand audit
+app.post('/api/projects/:id/direction/generate-classic', async (req, res) => {
+  try {
+    const { db } = await import('./db/db.js');
+    const stageDoc = await db.collection('projects').doc(req.params.id)
+      .collection('stages').doc('2').get();
+    const brandAudit = stageDoc.exists ? stageDoc.data().output || '' : '';
+    if (!brandAudit) return res.status(400).json({ error: 'Stage 02 (Brand Audit) not complete yet' });
+
+    const tokens = await extractTokens([{
+      role: 'user',
+      content: `You are a senior brand designer. Based on this brand audit, create a fitting design system — colors and typography that authentically represent this brand's personality, audience, and values.
+
+BRAND AUDIT:
+${brandAudit}
+
+${TOKEN_SCHEMA}`,
+    }]);
+    res.json({ tokens });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// URL Reference — Firecrawl scrape → extract tokens
+app.post('/api/projects/:id/direction/generate-url', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  try {
+    const { scrapeWithFirecrawl } = await import('./services/scraper.js');
+    const content = await scrapeWithFirecrawl(url);
+    const tokens = await extractTokens([{
+      role: 'user',
+      content: `Analyze this reference website and extract its exact visual design language as a design system.
+Extract real colors and fonts used — do not invent values.
+
+REFERENCE SITE: ${url}
+${content}
+
+${TOKEN_SCHEMA}`,
+    }]);
+    res.json({ tokens });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Image Reference — Claude vision → extract tokens
+app.post('/api/projects/:id/direction/generate-image', upload.array('images', 5), async (req, res) => {
+  if (!req.files?.length) return res.status(400).json({ error: 'No images provided' });
+  try {
+    const { callModel } = await import('./services/claude.js');
+    const imageContent = req.files.map(f => ({
+      type: 'image_url',
+      image_url: { url: `data:${f.mimetype};base64,${f.buffer.toString('base64')}` },
+    }));
+    const raw = await callModel([{
+      role: 'user',
+      content: [
+        ...imageContent,
+        { type: 'text', text: `Analyze these reference images and extract their visual design language as a design system.
+Extract real colors visible in the images and identify the typography style.
+
+${TOKEN_SCHEMA}` },
+      ],
+    }], 'google/gemini-flash-1.5');
+    const cleaned = raw.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+    res.json({ tokens: JSON.parse(cleaned) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Scrape reference URLs for Stage 04.5 — uses Firecrawl for rich markdown
 app.post('/api/scrape-reference', async (req, res) => {
   const { urls } = req.body;
