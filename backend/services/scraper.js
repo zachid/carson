@@ -1,5 +1,37 @@
 import * as cheerio from 'cheerio';
 
+// ── Firecrawl scraper ─────────────────────────────────────────────────────────
+// Returns rich markdown of the full page — far better for visual/brand analysis.
+// Falls back to Cheerio if FIRECRAWL_API_KEY is not set.
+export async function scrapeWithFirecrawl(url) {
+  const key = process.env.FIRECRAWL_API_KEY;
+  if (!key) return scrapeUrl(url); // fallback
+
+  const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      url,
+      formats: ['markdown'],
+      onlyMainContent: false,
+    }),
+  });
+
+  if (!res.ok) {
+    console.warn(`Firecrawl failed (${res.status}) for ${url}, falling back to Cheerio`);
+    return scrapeUrl(url);
+  }
+
+  const json = await res.json();
+  const md = json.data?.markdown || json.markdown || '';
+  if (!md) return scrapeUrl(url); // fallback if empty
+  return md;
+}
+
+
 export async function scrapeUrl(url) {
   const res = await fetch(url, {
     headers: {

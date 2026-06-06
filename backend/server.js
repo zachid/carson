@@ -51,21 +51,66 @@ app.post('/api/projects/:id/analyze-images', upload.array('images', 10), async (
   }
 });
 
-// Scrape reference URLs for Stage 04.5
+// Scrape reference URLs for Stage 04.5 — uses Firecrawl for rich markdown
 app.post('/api/scrape-reference', async (req, res) => {
   const { urls } = req.body;
   if (!urls?.length) return res.json({ notes: '' });
 
-  const { scrapeUrl } = await import('./services/scraper.js');
+  const { scrapeWithFirecrawl } = await import('./services/scraper.js');
   const { callModel } = await import('./services/claude.js');
 
   try {
-    const scraped = await Promise.all(urls.map(u => scrapeUrl(u).catch(() => `Failed to scrape ${u}`)));
-    const combined = scraped.map((c, i) => `Reference site ${i + 1} (${urls[i]}):\n${c}`).join('\n\n---\n\n');
+    const scraped = await Promise.all(
+      urls.map(u => scrapeWithFirecrawl(u).catch(e => `Failed to scrape ${u}: ${e.message}`))
+    );
+    const combined = scraped
+      .map((c, i) => `## Reference site ${i + 1}: ${urls[i]}\n\n${c}`)
+      .join('\n\n---\n\n');
 
     const notes = await callModel([{
       role: 'user',
-      content: `Analyze these reference websites for visual design patterns. Extract: layout structure, visual style, spacing, typography choices, color use, UI patterns, and overall aesthetic. Format as structured design notes.\n\n${combined}`,
+      content: `You are a senior brand and visual design analyst. Analyze the following reference website content and extract a detailed visual + brand profile.
+
+Extract and structure the following:
+
+**Colors**
+- Background color(s) — approximate hex or description
+- Primary text color
+- Accent / CTA color(s)
+- Secondary colors or gradients
+
+**Typography**
+- Heading font family and weight
+- Body font family and weight
+- Font size feel (large/medium/small, editorial/functional)
+- Letter-spacing and line-height character
+
+**Layout & Spacing**
+- Overall density (airy / balanced / dense)
+- Grid structure (centered narrow / full-width / asymmetric)
+- Section padding character
+
+**Visual Style**
+- Design aesthetic (minimal / bold / editorial / corporate / playful / luxury / technical)
+- Use of imagery (photography / illustration / icons / none)
+- Motion / animation presence
+- Border radius style (sharp / subtle / rounded)
+- Shadow usage
+
+**Tone of Voice**
+- Communication style (formal / conversational / technical / inspiring)
+- Key messaging themes
+- CTA language style
+
+**Brand Attributes**
+- 5 adjectives that describe the brand
+- Target audience impression
+
+Format as structured markdown notes a designer can use directly as visual direction.
+
+---
+
+${combined}`,
     }]);
 
     res.json({ notes });
@@ -162,11 +207,11 @@ app.post('/api/generate-designsystem', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'url required' });
 
-  const { scrapeUrl } = await import('./services/scraper.js');
+  const { scrapeWithFirecrawl } = await import('./services/scraper.js');
   const { callModel } = await import('./services/claude.js');
 
   try {
-    const scrapedContent = await scrapeUrl(url);
+    const scrapedContent = await scrapeWithFirecrawl(url);
 
     const content = await callModel([{
       role: 'user',
