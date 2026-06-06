@@ -15,7 +15,7 @@ export async function scrapeWithFirecrawl(url) {
     },
     body: JSON.stringify({
       url,
-      formats: ['markdown'],
+      formats: ['markdown', 'html'],
       onlyMainContent: false,
     }),
   });
@@ -28,6 +28,21 @@ export async function scrapeWithFirecrawl(url) {
   const json = await res.json();
   const md = json.data?.markdown || json.markdown || '';
   if (!md) return scrapeUrl(url); // fallback if empty
+
+  // Extract all hex colors from the raw HTML (CSS vars, inline styles, class definitions)
+  const html = json.data?.html || json.html || '';
+  if (html) {
+    const hexSet = new Set(
+      [...html.matchAll(/#([0-9a-fA-F]{6})\b/g)]
+        .map(m => '#' + m[1].toUpperCase())
+        .filter(h => h !== '#000000' && h !== '#FFFFFF' && h !== '#FFFFFF') // skip pure black/white
+    );
+    if (hexSet.size > 0) {
+      const colorList = [...hexSet].slice(0, 40).join(', ');
+      return md + `\n\n---\n## Hex Colors Extracted From Page CSS/HTML\n${colorList}\n`;
+    }
+  }
+
   return md;
 }
 

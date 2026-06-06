@@ -111,10 +111,14 @@ app.post('/api/projects/:id/direction/generate-url', async (req, res) => {
     const content = await scrapeWithFirecrawl(url);
     const tokens = await extractTokens([{
       role: 'user',
-      content: `Analyze this reference website and extract its exact visual design language as a design system.
-Extract real colors and fonts used — do not invent values.
+      content: `You are a senior brand designer extracting a design system from a real website.
 
 REFERENCE SITE: ${url}
+
+The scraped content below includes a "Hex Colors Extracted From Page CSS/HTML" section — USE THOSE HEX VALUES DIRECTLY when assigning colors. Do not invent or approximate colors; prioritize the extracted hex codes.
+
+For typography, identify the heading and body font from the content (Google Fonts names preferred). If you cannot determine the exact font, use a close match.
+
 ${content}
 
 ${TOKEN_SCHEMA}`,

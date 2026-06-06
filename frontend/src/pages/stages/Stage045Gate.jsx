@@ -270,14 +270,69 @@ transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, op
 
 function parseMdTokens(md) {
   const colors = {};
-  const re = /--(bg|bg-card|border|text|accent|accent-2)(?![\w-]):\s*(#[0-9a-fA-F]{3,8})/g;
-  const map = { 'bg': 'background', 'bg-card': 'bgCard', 'border': 'border', 'text': 'text', 'accent': 'accent01', 'accent-2': 'accent02' };
+
+  // Strategy 1: CSS variables — our own DESIGN_SYSTEM.md format
+  // e.g.  --bg: #111110;  --accent: #8B5CF6;
+  const cssRe = /--(bg|bg-card|border|text|accent|accent-2)(?![\w-]):\s*(#[0-9a-fA-F]{6,8})/g;
+  const cssMap = { 'bg': 'background', 'bg-card': 'bgCard', 'border': 'border', 'text': 'text', 'accent': 'accent01', 'accent-2': 'accent02' };
   let m;
-  while ((m = re.exec(md)) !== null) {
-    if (map[m[1]] && !colors[map[m[1]]]) colors[map[m[1]]] = m[2];
+  while ((m = cssRe.exec(md)) !== null) {
+    if (cssMap[m[1]] && !colors[cssMap[m[1]]]) colors[cssMap[m[1]]] = m[2];
   }
-  const fontM = md.match(/\|\s*Typeface\s*\|\s*([^|\n]+)/i);
-  const font = fontM ? fontM[1].trim().split(/[\s,(]/)[0] : 'Inter';
+
+  // Strategy 2: Prose / table format — scan every line that contains a hex code,
+  // then match it against color-role keywords in the same line.
+  if (Object.keys(colors).length < 3) {
+    const roleMap = [
+      { patterns: ['background', 'page background', 'main background', 'bg color', 'base color'],          target: 'background' },
+      { patterns: ['bg card', 'bgcard', 'card surface', 'panel background', 'secondary background', 'card background'], target: 'bgCard' },
+      { patterns: ['border', 'divider', 'separator', 'stroke'],                                             target: 'border' },
+      { patterns: ['primary text', 'body text', 'text color', 'foreground', 'main text'],                  target: 'text' },
+      { patterns: ['accent 01', 'accent01', 'primary accent', 'primary color', 'cta', 'highlight', 'brand color', 'accent color'], target: 'accent01' },
+      { patterns: ['accent 02', 'accent02', 'accent-2', 'secondary accent', 'secondary color'],             target: 'accent02' },
+    ];
+
+    const lines = md.split('\n');
+    for (const line of lines) {
+      const hexMatch = line.match(/#([0-9a-fA-F]{6})\b/);
+      if (!hexMatch) continue;
+      const hex = '#' + hexMatch[1];
+      const lower = line.toLowerCase();
+      for (const { patterns, target } of roleMap) {
+        if (colors[target]) continue;
+        if (patterns.some(p => lower.includes(p))) { colors[target] = hex; break; }
+      }
+    }
+  }
+
+  // Strategy 3: "Hex Colors Extracted From Page CSS/HTML" section appended by scraper
+  // Pick first few unique colors and assign them to empty slots in order
+  if (Object.keys(colors).length < 4) {
+    const cssSection = md.match(/## Hex Colors Extracted From Page CSS\/HTML\n([^\n#]+)/);
+    if (cssSection) {
+      const extracted = cssSection[1].split(',').map(s => s.trim()).filter(s => /^#[0-9a-fA-F]{6}$/.test(s));
+      const slots = ['background', 'bgCard', 'border', 'text', 'accent01', 'accent02'];
+      for (const hex of extracted) {
+        const empty = slots.find(s => !colors[s]);
+        if (!empty) break;
+        colors[empty] = hex;
+      }
+    }
+  }
+
+  // Font extraction — try multiple patterns in priority order
+  const fontPatterns = [
+    /\|\s*Typeface\s*\|\s*([^|\n]+)/i,                           // | Typeface | Manrope |
+    /heading\s+font[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i,  // Heading font: **Inter**
+    /typeface[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i,         // Typeface: Manrope
+    /font(?:\s+family)?[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i, // Font family: Inter
+  ];
+  let font = 'Inter';
+  for (const pat of fontPatterns) {
+    const fm = md.match(pat);
+    if (fm) { font = fm[1].trim().split(/[\s,(]/)[0]; break; }
+  }
+
   return {
     name: parseBrandName(md),
     colors: { ...DEFAULT_TOKENS.colors, ...colors },
@@ -415,6 +470,7 @@ export default function Stage045Gate({ project, onComplete }) {
 
   const handleMdUpload = (e) => {
     const file = e.target.files[0]; if (!file) return;
+    e.target.value = ''; // reset so the same file can be re-uploaded
     setMdError('');
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -526,7 +582,7 @@ export default function Stage045Gate({ project, onComplete }) {
                 </div>
               </div>
             )}
-            <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleImageFile(e.target.files[0])} />
+            <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { handleImageFile(e.target.files[0]); e.target.value = ''; }} />
           </div>
         );
 
