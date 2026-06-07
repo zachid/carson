@@ -560,6 +560,50 @@ LAYOUT RULES
   }
 });
 
+// ── Stage 05 version history (Firestore) ─────────────────────────────────────
+// GET  /api/projects/:id/stages/5/versions  → all saved versions (html included)
+app.get('/api/projects/:id/stages/5/versions', async (req, res) => {
+  try {
+    const { db } = await import('./db/db.js');
+    const snap = await db.collection('projects').doc(req.params.id)
+      .collection('s5versions').orderBy('created_at', 'asc').get();
+    const versions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ versions });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:id/stages/5/versions  → save a new version
+app.post('/api/projects/:id/stages/5/versions', async (req, res) => {
+  const { html, label } = req.body;
+  if (!html) return res.status(400).json({ error: 'html required' });
+  try {
+    const { db } = await import('./db/db.js');
+    const ref = await db.collection('projects').doc(req.params.id)
+      .collection('s5versions').add({
+        label: label || 'v1',
+        html,
+        created_at: (await import('firebase-admin')).default.firestore.FieldValue.serverTimestamp(),
+      });
+    res.json({ id: ref.id, label });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/projects/:id/stages/5/versions/:vid
+app.delete('/api/projects/:id/stages/5/versions/:vid', async (req, res) => {
+  try {
+    const { db } = await import('./db/db.js');
+    await db.collection('projects').doc(req.params.id)
+      .collection('s5versions').doc(req.params.vid).delete();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Parse uploaded content file (PDF / DOCX / MD / TXT) ──────────────────────
 app.post('/api/parse-content', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file provided' });

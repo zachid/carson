@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { streamStage } from '../../api/client.js';
+import api from '../../api/client.js';
 
 function stripCodeFences(text) {
   if (!text) return text;
@@ -34,27 +35,50 @@ function downloadHtml(html, filename = 'site.html') {
   URL.revokeObjectURL(url);
 }
 
-function versionsKey(projectId) { return `carson_s5v_${projectId}`; }
+// ── Version storage helpers ──────────────────────────────────────────────────
+// Primary store: Firestore (persists across devices)
+// Cache: localStorage (instant load on repeat visits)
 
-function loadVersions(projectId) {
-  try { return JSON.parse(localStorage.getItem(versionsKey(projectId)) || '[]'); }
+function cacheKey(projectId) { return `carson_s5v_${projectId}`; }
+
+function readCache(projectId) {
+  try { return JSON.parse(localStorage.getItem(cacheKey(projectId)) || '[]'); }
   catch { return []; }
 }
 
-function saveVersions(projectId, versions) {
-  try { localStorage.setItem(versionsKey(projectId), JSON.stringify(versions)); }
+function writeCache(projectId, versions) {
+  try { localStorage.setItem(cacheKey(projectId), JSON.stringify(versions)); }
   catch {}
+}
+
+async function fetchVersionsFromDB(projectId) {
+  try {
+    const { data } = await api.get(`/projects/${projectId}/stages/5/versions`);
+    return data.versions || [];
+  } catch { return null; } // null = network error, keep cache
+}
+
+async function saveVersionToDB(projectId, html, label) {
+  try {
+    const { data } = await api.post(`/projects/${projectId}/stages/5/versions`, { html, label });
+    return data.id; // Firestore doc id
+  } catch (e) {
+    console.warn('Failed to save version to Firestore:', e.message);
+    return null;
+  }
 }
 
 export default function Stage05Design({ project, stageData, onComplete, onContinue, onBack, startFresh, onMounted }) {
   const existingHtml = stageData?.output ? stripCodeFences(stageData.output) : '';
 
   // ── Version history ─────────────────────────────────────────────────────────
-  const [versions, setVersions] = useState(() => loadVersions(project.id));
-  const [activeV,  setActiveV]  = useState(() => {
-    const v = loadVersions(project.id);
+  // Seed from localStorage cache immediately; refresh from Firestore in background
+  const [versions,      setVersions]     = useState(() => readCache(project.id));
+  const [activeV,       setActiveV]      = useState(() => {
+    const v = readCache(project.id);
     return v.length > 0 ? v.length - 1 : 0;
   });
+  const [versionsReady, setVersionsReady] = useState(false);
 
   // What's shown in the iframe: saved version if available, else existing stageData output
   const displayHtml = versions[activeV]?.html || existingHtml;
@@ -69,11 +93,13 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
 
   const addVersion = (html) => {
     setVersions(prev => {
-      // Don't duplicate if this HTML is already the latest version
       if (prev.length > 0 && prev[prev.length - 1].html === html) return prev;
-      const updated = [...prev, { label: `v${prev.length + 1}`, html }];
-      saveVersions(project.id, updated);
+      const label = `v${prev.length + 1}`;
+      const updated = [...prev, { label, html }];
+      // Write-through: cache immediately, persist to Firestore async
+      writeCache(project.id, updated);
       setActiveV(updated.length - 1);
+      saveVersionToDB(project.id, html, label); // fire-and-forget
       return updated;
     });
   };
@@ -99,18 +125,27 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
 
   // ── On mount ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Always clear the one-shot regen flag immediately
     onMounted?.();
+
+    // Load versions from Firestore (source of truth) — update cache + state
+    fetchVersionsFromDB(project.id).then(dbVersions => {
+      if (dbVersions && dbVersions.length > 0) {
+        setVersions(dbVersions);
+        setActiveV(dbVersions.length - 1);
+        writeCache(project.id, dbVersions);
+      }
+      setVersionsReady(true);
+    });
 
     if (startFresh && !autoStarted.current) {
       autoStarted.current = true;
       // Archive existing HTML as a version before generating the new one
       if (existingHtml && !versions.some(v => v.html === existingHtml)) {
-        setVersions(prev => {
-          const updated = [...prev, { label: `v${prev.length + 1}`, html: existingHtml }];
-          saveVersions(project.id, updated);
-          return updated;
-        });
+        const label = `v${versions.length + 1}`;
+        const updated = [...versions, { label, html: existingHtml }];
+        setVersions(updated);
+        writeCache(project.id, updated);
+        saveVersionToDB(project.id, existingHtml, label);
       }
       startGeneration();
     }
