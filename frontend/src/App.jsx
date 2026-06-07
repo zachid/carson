@@ -1,16 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard.jsx';
 import Project from './pages/Project.jsx';
 
 export default function App() {
   const [currentProjectId, setCurrentProjectId] = useState(null);
-  const [theme, setTheme] = useState('dark');
 
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    document.body.classList.toggle('light', next === 'light');
-  };
+  // Force light mode — app is light-only
+  useEffect(() => { document.body.classList.add('light'); }, []);
 
   return (
     <>
@@ -24,9 +20,6 @@ export default function App() {
           CARSON
         </a>
         <div className="app-header-spacer" />
-        <button className="btn btn-ghost" style={{ height: 28, padding: '0 10px', fontSize: 9 }} onClick={toggleTheme}>
-          {theme === 'dark' ? '☀ Light' : '◐ Dark'}
-        </button>
       </header>
 
       <main>
