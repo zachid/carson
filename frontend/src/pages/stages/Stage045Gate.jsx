@@ -480,8 +480,8 @@ export default function Stage045Gate({ project, onComplete }) {
   const [saving,       setSaving]       = useState(false);
   const [panelTab,     setPanelTab]     = useState(0); // 0 = visual, 1 = design system, 2 = scaffold
 
-  // Scaffold
-  const [scaffoldHtml,       setScaffoldHtml]       = useState('');
+  // Scaffold layout spec
+  const [scaffoldSpec,       setScaffoldSpec]       = useState('');
   const [scaffoldGenerating, setScaffoldGenerating] = useState(false);
   const [scaffoldError,      setScaffoldError]      = useState('');
 
@@ -582,7 +582,7 @@ export default function Stage045Gate({ project, onComplete }) {
     setScaffoldGenerating(true); setScaffoldError('');
     try {
       const { data } = await api.post(`/projects/${project.id}/direction/generate-scaffold`, { tokens });
-      setScaffoldHtml(data.html || '');
+      setScaffoldSpec(data.spec || '');
     } catch (err) { setScaffoldError(err.response?.data?.error || err.message); }
     finally { setScaffoldGenerating(false); }
   };
@@ -747,14 +747,14 @@ export default function Stage045Gate({ project, onComplete }) {
         />
       )}
 
-      {/* ── Tab 2: Scaffold wireframe ── */}
+      {/* ── Tab 2: Scaffold layout spec ── */}
       {panelTab === 2 && (
         <div style={{ padding: 16 }}>
-          {!scaffoldHtml ? (
+          {!scaffoldSpec ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.6 }}>
-                Generate a grayscale structural wireframe based on the layout profile extracted from the reference.
-                Shows section order, grid patterns, proportions and content hierarchy — no color, no brand.
+              <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.65 }}>
+                Generates a precise structural layout specification — section order, grid patterns, column proportions,
+                element sizes and alignments. Structural only: no color, no visual styling.
               </div>
               <button
                 className="btn btn-primary"
@@ -763,12 +763,10 @@ export default function Stage045Gate({ project, onComplete }) {
                 style={{ fontSize: 11 }}
               >
                 {scaffoldGenerating
-                  ? <><span style={{ animation: 'pulse 1s infinite' }}>●</span> Generating wireframe…</>
-                  : '⬡ Generate Scaffold →'}
+                  ? <><span style={{ animation: 'pulse 1s infinite' }}>●</span> Generating spec…</>
+                  : '⬡ Generate Layout Spec →'}
               </button>
-              {scaffoldError && (
-                <div style={{ fontSize: 11, color: '#ef4444' }}>{scaffoldError}</div>
-              )}
+              {scaffoldError && <div style={{ fontSize: 11, color: '#ef4444' }}>{scaffoldError}</div>}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -777,20 +775,17 @@ export default function Stage045Gate({ project, onComplete }) {
                   {scaffoldGenerating ? '● Regenerating…' : '↺ Regenerate'}
                 </button>
                 <button className="btn btn-ghost" style={{ fontSize: 10 }}
-                  onClick={() => {
-                    const w = window.open('', '_blank');
-                    w.document.write(scaffoldHtml);
-                    w.document.close();
-                  }}>
-                  ↗ Open full page
+                  onClick={() => navigator.clipboard?.writeText(scaffoldSpec)}>
+                  ⎘ Copy
                 </button>
               </div>
-              <iframe
-                srcDoc={scaffoldHtml}
-                style={{ width: '100%', height: 640, border: '1px solid var(--border-md)', background: '#fff' }}
-                title="Scaffold wireframe"
-                sandbox="allow-scripts"
-              />
+              <pre style={{
+                margin: 0, padding: '16px 20px',
+                background: 'var(--bg)', border: '1px solid var(--border-md)',
+                fontFamily: 'monospace', fontSize: 11, lineHeight: 1.75,
+                color: 'var(--text-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                maxHeight: 560, overflowY: 'auto',
+              }}>{scaffoldSpec}</pre>
             </div>
           )}
         </div>

@@ -112,28 +112,53 @@ ${TOKEN_SCHEMA}`,
   }
 });
 
-// URL Reference — Firecrawl scrape → extract tokens
+// URL Reference — screenshot vision (primary) or text fallback → extract tokens
 app.post('/api/projects/:id/direction/generate-url', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'url required' });
   try {
-    const { scrapeWithFirecrawl } = await import('./services/scraper.js');
-    const content = await scrapeWithFirecrawl(url);
-    const tokens = await extractTokens([{
-      role: 'user',
-      content: `You are a senior brand designer extracting a design system from a real website.
+    const { scrapeForDesignAnalysis } = await import('./services/scraper.js');
+    const { text, screenshotBase64, hexColors } = await scrapeForDesignAnalysis(url);
+    const { callModel } = await import('./services/claude.js');
 
-REFERENCE SITE: ${url}
+    let raw;
 
-The scraped content below includes a "Hex Colors Extracted From Page CSS/HTML" section — USE THOSE HEX VALUES DIRECTLY when assigning colors. Do not invent or approximate colors; prioritize the extracted hex codes.
+    if (screenshotBase64) {
+      // ── Vision path: Claude reads actual pixels ───────────────────────────
+      const colorHint = hexColors.length
+        ? `\nCSS hex colors found in page source (use these exact values when they match what you see): ${hexColors.join(', ')}`
+        : '';
+      raw = await callModel([{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } },
+          { type: 'text', text:
+`You are a senior brand designer. Analyze this SCREENSHOT of ${url}.
 
-For typography, identify the heading and body font from the content (Google Fonts names preferred). If you cannot determine the exact font, use a close match.
+Read the EXACT colors, fonts, radius, spacing, and layout structure directly from the pixels — do not guess.
+${colorHint}
 
-${content}
+${TOKEN_SCHEMA}` },
+        ],
+      }], 'google/gemini-flash-1.5');
+    } else {
+      // ── Text fallback: use HTML hex colors + markdown ─────────────────────
+      const colorSection = hexColors.length
+        ? `\n\n## Hex Colors Extracted From Page CSS\n${hexColors.join(', ')}`
+        : '';
+      raw = await callModel([{
+        role: 'user',
+        content: `Extract design tokens from this site. Prioritize the CSS hex colors section for actual color values.
+
+SITE: ${url}
+${text}${colorSection}
 
 ${TOKEN_SCHEMA}`,
-    }]);
-    res.json({ tokens });
+      }]);
+    }
+
+    const cleaned = raw.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+    res.json({ tokens: JSON.parse(cleaned) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -410,17 +435,17 @@ Return ONLY the markdown content. No explanation.`,
   }
 });
 
-// ── Generate scaffold wireframe HTML from layout tokens ───────────────────────
+// ── Generate layout structure spec (text) from layout tokens ─────────────────
+// Returns a structured text document listing sections, patterns, proportions,
+// alignments and spacing — no visual wireframe HTML, for accuracy.
 app.post('/api/projects/:id/direction/generate-scaffold', async (req, res) => {
   const { tokens } = req.body;
   if (!tokens) return res.status(400).json({ error: 'tokens required' });
 
-  const brandName = tokens.name || 'Site';
-  const layout = tokens.layout || {};
-  const sections = Array.isArray(layout.sections) && layout.sections.length
-    ? layout.sections
-    : ['hero', 'features', 'cta', 'faq', 'footer'];
-
+  const brandName      = tokens.name || 'Site';
+  const layout         = tokens.layout || {};
+  const sections       = Array.isArray(layout.sections) && layout.sections.length
+    ? layout.sections : ['hero', 'features', 'cta', 'faq', 'footer'];
   const heroPattern    = layout.heroPattern    || 'centered';
   const borderRadius   = layout.borderRadius   || '0px';
   const shadowStyle    = layout.shadowStyle    || 'none';
@@ -429,63 +454,66 @@ app.post('/api/projects/:id/direction/generate-scaffold', async (req, res) => {
   const navStyle       = layout.navStyle       || 'minimal';
   const personality    = layout.personality    || 'minimal';
 
-  const sectionGuide = sections.map((s, i) => `Section ${String(i + 1).padStart(2, '0')}: ${s}`).join('\n');
+  const sectionList = sections.map((s, i) => `${i + 1}. ${s}`).join('\n');
 
   try {
     const { callModel } = await import('./services/claude.js');
-    const html = await callModel([{ role: 'user', content: `
-Generate a complete grayscale visual wireframe HTML for "${brandName}".
+    const spec = await callModel([{ role: 'user', content:
+`You are a senior UX architect. Write a precise layout structure specification for "${brandName}".
 
-LAYOUT PROFILE:
+LAYOUT PROFILE EXTRACTED FROM REFERENCE:
 - Hero pattern: ${heroPattern}
 - Border radius: ${borderRadius}
-- Shadow style: ${shadowStyle}
+- Shadow: ${shadowStyle}
 - Section spacing: ${sectionSpacing}
 - Card style: ${cardStyle}
 - Nav style: ${navStyle}
 - Visual personality: ${personality}
 
-SECTIONS TO RENDER IN ORDER:
-${sectionGuide}
+SECTIONS TO DOCUMENT (in order):
+${sectionList}
 
-WIREFRAME STYLE RULES (follow exactly):
-CSS vars: --bg:#e8e8e8; --page:#f7f7f7; --ink:#111; --muted:#6a6a6a; --line:#b9b9b9; --line-strong:#777; --fill-white:#fff; --fill-light:#eee; --fill-mid:#d8d8d8; --fill-dark:#1c1c1c; --fill-deep:#050505;
+Write the spec as a structured plain-text document. For each block use this exact format:
 
-body background: 40×40 grid lines (rgba(0,0,0,0.045)) on --bg.
-.page-frame: white page container, max 1500px, centered.
-.wire-box: border:1px dashed var(--line-strong); background:var(--fill-white); font-family:monospace; font-size:12px; color:var(--muted); display:flex; align-items:center; justify-content:center;
-.wire-box::before: content:attr(data-label); position:absolute; top:6px; left:8px; font-size:9px; text-transform:uppercase; letter-spacing:0.04em; color:#8a8a8a;
-.wire-box.wire-dark: background:var(--fill-dark); color:#cfcfcf; border-color:#676767;
-.section-note: monospace 11px muted label with horizontal rules left+right, section number + name + proportion note.
-.section: padding based on sectionSpacing — compact:48px, balanced:80px, airy:120px — all sections border-bottom:1px solid var(--line).
+────────────────────────────────────
+NAVIGATION
+Pattern: [e.g. 3-col: Logo · Nav links · CTA buttons]
+Height: [e.g. 64px]
+Behavior: [e.g. sticky, transparent on scroll]
+Alignment: [logo left / nav center / CTAs right]
+Elements: [list each element with its size and position]
+────────────────────────────────────
 
-HERO PATTERN RULES:
-- centered: large centered h1 box, sub-copy box, cta-row centered
-- left-text-right-media: 2-col grid ~45/55, copy stack left, large dashed media right
-- right-text-left-media: 2-col grid ~55/45, large dashed media left, copy stack right
-- full-width: full-width h1 spanning page, media below
-- split-equal: 2-col 50/50, both sides content
+Then for each section:
 
-CARD/GRID PATTERN RULES:
-- features-grid → 3-col equal cards or 2-col bento depending on personality
-- features-dark → dark background section
-- trust-strip → compact logo row
-- use-cases → 3-col use-case cards with icon + title + body + media
-- testimonials → quote cards row
-- pricing → 2 or 3-col pricing panels
-- cta → large centered conversion panel
-- faq → 2-col, left heading + right accordion list
-- footer → dark bg, logo + 3-col link grid
+────────────────────────────────────
+SECTION [N] · [SECTION NAME IN CAPS]
+Background: [canvas / subtle-tinted / dark / brand-color]
+Height: [full-vh / tall ~80vh / medium ~50vh / natural / compact ~120px]
+Layout pattern: [e.g. 2-col split: 45% copy / 55% media]
+Padding: [e.g. 96px top / 80px bottom]
+Alignment: [left / center / right]
 
-BORDER RADIUS: apply ${borderRadius} to buttons and cards (wire-box elements); if 0px use sharp corners everywhere.
-SHADOW: if "none" use border-only depth; if "subtle" add box-shadow:0 2px 8px rgba(0,0,0,0.08); if "prominent" add box-shadow:0 8px 32px rgba(0,0,0,0.16).
+Content blocks (top to bottom, left to right):
+  - [Block name] — [size/proportion, e.g. "max-width 680px, centered"] — [alignment]
+  - [Block name] — [size] — [alignment]
+  ...
 
-Output the annotation panel (fixed bottom-right, 300px, white, mono 11px) explaining wireframe conventions.
+Grid (if applicable): [e.g. 3-col equal gap-20px / 2-col bento 1.1fr+0.9fr]
+Card style: [bordered / shadow / flat / elevated] — [border-radius] — [padding e.g. 24px]
+Notes: [any important layout behavior, overlaps, sticky elements, z-index, etc.]
+────────────────────────────────────
 
-Return ONLY the complete raw HTML document — no explanation, no markdown fences, no preamble.
-    ` }]);
+Be specific with sizes and proportions. Use px or % or fr units. Do NOT describe colors or visual styling — this is structural only.
 
-    res.json({ html });
+End with:
+────────────────────────────────────
+LAYOUT RULES
+- [5-8 key layout rules derived from the profile]
+────────────────────────────────────
+` }]);
+
+    res.json({ spec });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

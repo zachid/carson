@@ -1,49 +1,73 @@
 import * as cheerio from 'cheerio';
 
-// ── Firecrawl scraper ─────────────────────────────────────────────────────────
-// Returns rich markdown of the full page — far better for visual/brand analysis.
-// Falls back to Cheerio if FIRECRAWL_API_KEY is not set.
-export async function scrapeWithFirecrawl(url) {
-  const key = process.env.FIRECRAWL_API_KEY;
-  if (!key) return scrapeUrl(url); // fallback
+// ── Design-analysis scrape: screenshot + hex colors + markdown ─────────────────
+// Used by the generate-url token extraction endpoint.
+// Returns { text, screenshotBase64, hexColors } so callers can choose vision vs text.
+export async function scrapeForDesignAnalysis(url) {
+  const key = process.env.FIRECRAWL_API_KEY?.trim();
+  if (!key) {
+    const text = await scrapeUrl(url);
+    return { text, screenshotBase64: null, hexColors: [] };
+  }
 
-  const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      url,
-      formats: ['markdown', 'html'],
-      onlyMainContent: false,
-    }),
-  });
+  let res;
+  try {
+    res = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ url, formats: ['markdown', 'html', 'screenshot'], onlyMainContent: false }),
+    });
+  } catch (e) {
+    console.warn('Firecrawl network error, falling back:', e.message);
+    const text = await scrapeUrl(url);
+    return { text, screenshotBase64: null, hexColors: [] };
+  }
 
   if (!res.ok) {
-    console.warn(`Firecrawl failed (${res.status}) for ${url}, falling back to Cheerio`);
-    return scrapeUrl(url);
+    console.warn(`Firecrawl ${res.status} for ${url}, falling back`);
+    const text = await scrapeUrl(url);
+    return { text, screenshotBase64: null, hexColors: [] };
   }
 
   const json = await res.json();
-  const md = json.data?.markdown || json.markdown || '';
-  if (!md) return scrapeUrl(url); // fallback if empty
+  const md            = json.data?.markdown   || json.markdown   || '';
+  const html          = json.data?.html        || json.html        || '';
+  const screenshotUrl = json.data?.screenshot  || json.screenshot  || '';
 
-  // Extract all hex colors from the raw HTML (CSS vars, inline styles, class definitions)
-  const html = json.data?.html || json.html || '';
-  if (html) {
-    const hexSet = new Set(
-      [...html.matchAll(/#([0-9a-fA-F]{6})\b/g)]
-        .map(m => '#' + m[1].toUpperCase())
-        .filter(h => h !== '#000000' && h !== '#FFFFFF' && h !== '#FFFFFF') // skip pure black/white
-    );
-    if (hexSet.size > 0) {
-      const colorList = [...hexSet].slice(0, 40).join(', ');
-      return md + `\n\n---\n## Hex Colors Extracted From Page CSS/HTML\n${colorList}\n`;
+  // Deduplicated hex colors from HTML source (skip pure black/white)
+  const hexColors = html
+    ? [...new Set(
+        [...html.matchAll(/#([0-9a-fA-F]{6})\b/g)]
+          .map(m => '#' + m[1].toUpperCase())
+          .filter(h => !['#000000','#FFFFFF','#111111','#EEEEEE','#FFFFFF'].includes(h))
+      )].slice(0, 40)
+    : [];
+
+  // Download screenshot → base64 so we can send to vision model
+  let screenshotBase64 = null;
+  if (screenshotUrl) {
+    try {
+      const imgRes = await fetch(screenshotUrl);
+      if (imgRes.ok) {
+        const buf = await imgRes.arrayBuffer();
+        screenshotBase64 = Buffer.from(buf).toString('base64');
+      }
+    } catch (e) {
+      console.warn('Screenshot download failed:', e.message);
     }
   }
 
-  return md;
+  const text = md || await scrapeUrl(url).catch(() => '');
+  return { text, screenshotBase64, hexColors };
+}
+
+// ── Legacy helper: scrape → markdown string (used by scrape-reference etc.) ───
+export async function scrapeWithFirecrawl(url) {
+  const { text, hexColors } = await scrapeForDesignAnalysis(url);
+  const colorSection = hexColors.length
+    ? `\n\n---\n## Hex Colors Extracted From Page CSS/HTML\n${hexColors.join(', ')}\n`
+    : '';
+  return text + colorSection;
 }
 
 
