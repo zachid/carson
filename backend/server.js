@@ -68,6 +68,16 @@ const TOKEN_SCHEMA = `Return ONLY a valid JSON object — no explanation, no mar
     "sub":       { "font": "Google Fonts name", "weight": "600" },
     "body":      { "font": "Google Fonts name", "weight": "400" },
     "captions":  { "font": "Google Fonts name", "weight": "300" }
+  },
+  "layout": {
+    "borderRadius": "one of: 0px | 4px | 8px | 12px | 20px | 999px — dominant radius of UI elements",
+    "shadowStyle":  "one of: none | subtle | prominent",
+    "heroPattern":  "one of: centered | left-text-right-media | right-text-left-media | full-width | split-equal",
+    "sectionSpacing": "one of: compact | balanced | airy",
+    "cardStyle":    "one of: flat | bordered | shadow | elevated | glass",
+    "navStyle":     "one of: minimal | standard | prominent | transparent-blur",
+    "personality":  "one of: minimal | bold | editorial | technical | corporate | playful | luxury",
+    "sections":     ["ordered list of page section ids, e.g.: hero, trust-strip, features-grid, features-dark, use-cases, testimonials, pricing, cta, faq, footer"]
   }
 }`;
 
@@ -395,6 +405,87 @@ Return ONLY the markdown content. No explanation.`,
     }]);
 
     res.json({ content });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Generate scaffold wireframe HTML from layout tokens ───────────────────────
+app.post('/api/projects/:id/direction/generate-scaffold', async (req, res) => {
+  const { tokens } = req.body;
+  if (!tokens) return res.status(400).json({ error: 'tokens required' });
+
+  const brandName = tokens.name || 'Site';
+  const layout = tokens.layout || {};
+  const sections = Array.isArray(layout.sections) && layout.sections.length
+    ? layout.sections
+    : ['hero', 'features', 'cta', 'faq', 'footer'];
+
+  const heroPattern    = layout.heroPattern    || 'centered';
+  const borderRadius   = layout.borderRadius   || '0px';
+  const shadowStyle    = layout.shadowStyle    || 'none';
+  const sectionSpacing = layout.sectionSpacing || 'balanced';
+  const cardStyle      = layout.cardStyle      || 'bordered';
+  const navStyle       = layout.navStyle       || 'minimal';
+  const personality    = layout.personality    || 'minimal';
+
+  const sectionGuide = sections.map((s, i) => `Section ${String(i + 1).padStart(2, '0')}: ${s}`).join('\n');
+
+  try {
+    const { callModel } = await import('./services/claude.js');
+    const html = await callModel([{ role: 'user', content: `
+Generate a complete grayscale visual wireframe HTML for "${brandName}".
+
+LAYOUT PROFILE:
+- Hero pattern: ${heroPattern}
+- Border radius: ${borderRadius}
+- Shadow style: ${shadowStyle}
+- Section spacing: ${sectionSpacing}
+- Card style: ${cardStyle}
+- Nav style: ${navStyle}
+- Visual personality: ${personality}
+
+SECTIONS TO RENDER IN ORDER:
+${sectionGuide}
+
+WIREFRAME STYLE RULES (follow exactly):
+CSS vars: --bg:#e8e8e8; --page:#f7f7f7; --ink:#111; --muted:#6a6a6a; --line:#b9b9b9; --line-strong:#777; --fill-white:#fff; --fill-light:#eee; --fill-mid:#d8d8d8; --fill-dark:#1c1c1c; --fill-deep:#050505;
+
+body background: 40×40 grid lines (rgba(0,0,0,0.045)) on --bg.
+.page-frame: white page container, max 1500px, centered.
+.wire-box: border:1px dashed var(--line-strong); background:var(--fill-white); font-family:monospace; font-size:12px; color:var(--muted); display:flex; align-items:center; justify-content:center;
+.wire-box::before: content:attr(data-label); position:absolute; top:6px; left:8px; font-size:9px; text-transform:uppercase; letter-spacing:0.04em; color:#8a8a8a;
+.wire-box.wire-dark: background:var(--fill-dark); color:#cfcfcf; border-color:#676767;
+.section-note: monospace 11px muted label with horizontal rules left+right, section number + name + proportion note.
+.section: padding based on sectionSpacing — compact:48px, balanced:80px, airy:120px — all sections border-bottom:1px solid var(--line).
+
+HERO PATTERN RULES:
+- centered: large centered h1 box, sub-copy box, cta-row centered
+- left-text-right-media: 2-col grid ~45/55, copy stack left, large dashed media right
+- right-text-left-media: 2-col grid ~55/45, large dashed media left, copy stack right
+- full-width: full-width h1 spanning page, media below
+- split-equal: 2-col 50/50, both sides content
+
+CARD/GRID PATTERN RULES:
+- features-grid → 3-col equal cards or 2-col bento depending on personality
+- features-dark → dark background section
+- trust-strip → compact logo row
+- use-cases → 3-col use-case cards with icon + title + body + media
+- testimonials → quote cards row
+- pricing → 2 or 3-col pricing panels
+- cta → large centered conversion panel
+- faq → 2-col, left heading + right accordion list
+- footer → dark bg, logo + 3-col link grid
+
+BORDER RADIUS: apply ${borderRadius} to buttons and cards (wire-box elements); if 0px use sharp corners everywhere.
+SHADOW: if "none" use border-only depth; if "subtle" add box-shadow:0 2px 8px rgba(0,0,0,0.08); if "prominent" add box-shadow:0 8px 32px rgba(0,0,0,0.16).
+
+Output the annotation panel (fixed bottom-right, 300px, white, mono 11px) explaining wireframe conventions.
+
+Return ONLY the complete raw HTML document — no explanation, no markdown fences, no preamble.
+    ` }]);
+
+    res.json({ html });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

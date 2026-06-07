@@ -23,6 +23,16 @@ const DEFAULT_TOKENS = {
     body:      { font: 'Inter', weight: '400' },
     captions:  { font: 'Inter', weight: '300' },
   },
+  layout: {
+    borderRadius: '0px',
+    shadowStyle: 'none',
+    heroPattern: 'left-text-right-media',
+    sectionSpacing: 'balanced',
+    cardStyle: 'bordered',
+    navStyle: 'minimal',
+    personality: 'minimal',
+    sections: ['hero', 'features-grid', 'cta', 'faq', 'footer'],
+  },
 };
 
 function hexToRgba(hex, alpha) {
@@ -44,7 +54,7 @@ function hexShift(hex, amount) {
 }
 
 function buildDesignSystemMd(tokens) {
-  const { name = 'Custom', colors: c = {}, typography: t = {} } = tokens;
+  const { name = 'Custom', colors: c = {}, typography: t = {}, layout: l = {} } = tokens;
   const bg   = c.background || '#111110';
   const bgc  = c.bgCard     || '#1A1A19';
   const bdr  = c.border     || '#252523';
@@ -53,15 +63,15 @@ function buildDesignSystemMd(tokens) {
   const acc2 = c.accent02   || '#06B6D4';
   const font = t.headlines?.font || 'Inter';
 
-  // Derived tokens
+  // Derived dark tokens
   const bgHover  = hexShift(bgc,  6);
   const bdrMd    = hexShift(bdr, 12);
   const bdrHi    = hexShift(bdr, 30);
   const txt2     = hexToRgba(txt, 0.55);
   const txt3     = hexToRgba(txt, 0.28);
 
-  // Light mode — invert the dark surfaces, keep accents close
-  const bgLight     = hexShift(txt,  10);   // near-white from text colour
+  // Light mode
+  const bgLight     = hexShift(txt,  10);
   const bgCardLight = '#FFFFFF';
   const bgHoverL    = hexShift(txt,  -10);
   const bdrLight    = hexToRgba(bg, 0.07);
@@ -73,41 +83,78 @@ function buildDesignSystemMd(tokens) {
   const acc1Light   = hexShift(acc1, -15);
   const acc2Light   = hexShift(acc2, -15);
 
+  // Layout-derived tokens
+  const rad    = l.borderRadius || '0px';
+  const radSm  = rad === '0px' ? '0px' : rad === '999px' ? '4px' : hexShift ? rad : rad;
+  const radLg  = rad === '0px' ? '0px' : rad === '4px' ? '8px' : rad === '8px' ? '16px' : rad === '12px' ? '20px' : '24px';
+  const shadow = l.shadowStyle || 'none';
+  const shadowSm = shadow === 'none' ? 'none' : shadow === 'subtle' ? '0 1px 4px rgba(0,0,0,0.08)' : '0 2px 8px rgba(0,0,0,0.14)';
+  const shadowMd = shadow === 'none' ? 'none' : shadow === 'subtle' ? '0 4px 16px rgba(0,0,0,0.10)' : '0 8px 24px rgba(0,0,0,0.18)';
+  const shadowLg = shadow === 'none' ? 'none' : shadow === 'subtle' ? '0 12px 40px rgba(0,0,0,0.12)' : '0 20px 60px rgba(0,0,0,0.22)';
+  const spSm  = l.sectionSpacing === 'compact' ? '48px' : l.sectionSpacing === 'airy' ? '120px' : '80px';
+  const spLg  = l.sectionSpacing === 'compact' ? '80px' : l.sectionSpacing === 'airy' ? '160px' : '120px';
+
+  const heroPatternDesc = {
+    'centered':              'Centered hero — headline and CTA centered on page',
+    'left-text-right-media': 'Split hero — copy left (~45%), product visual right (~55%)',
+    'right-text-left-media': 'Split hero — product visual left (~55%), copy right (~45%)',
+    'full-width':            'Full-width hero — headline spans full page width, media below',
+    'split-equal':           'Equal split — 50/50 content both columns',
+  }[l.heroPattern] || l.heroPattern || 'Centered hero';
+
+  const cardBorderNote = l.cardStyle === 'flat'     ? 'No border, background-only separation'
+    : l.cardStyle === 'shadow'   ? 'Shadow-only depth, no border'
+    : l.cardStyle === 'elevated' ? 'Elevated with shadow + subtle border'
+    : l.cardStyle === 'glass'    ? 'Frosted glass — backdrop-filter + border'
+    :                              '1px solid var(--border-md)';
+
   return `# Design System
 **${name} · v1.0**
 Replace this file to change the visual language of the entire project.
 
 ---
 
-## Identity
+## 1. Visual Personality
 | | |
 |---|---|
-| Typeface | ${font} |
-| Primary accent | \`${acc1}\` dark · \`${acc1Light}\` light |
-| Secondary accent | \`${acc2}\` dark · \`${acc2Light}\` light — use sparingly |
-| Border radius | \`0px\` everywhere |
-| Radius exception | \`999px\` — badges and tags only |
-| Mode | Dark-first. Light via \`body.light\` |
-| Shadows | None — depth through borders and layering only |
+| Style direction | ${l.personality || 'minimal'} |
+| Hero pattern | ${heroPatternDesc} |
+| Nav style | ${l.navStyle || 'minimal'} |
+| Card style | ${l.cardStyle || 'bordered'} — ${cardBorderNote} |
+| Section density | ${l.sectionSpacing || 'balanced'} |
+| Page sections | ${(l.sections || []).join(' → ') || 'hero → features → cta → footer'} |
 
 ---
 
-## Tokens
+## 2. Color System
 
 \`\`\`css
 /* Dark (default) */
 :root {
+  /* Canvas */
   --bg:        ${bg};
   --bg-card:   ${bgc};
   --bg-hover:  ${bgHover};
+
+  /* Borders */
   --border:    ${bdr};
   --border-md: ${bdrMd};
   --border-hi: ${bdrHi};
+
+  /* Text */
   --text:      ${txt};
   --text-2:    ${txt2};
   --text-3:    ${txt3};
+
+  /* Brand */
   --accent:    ${acc1};
   --accent-2:  ${acc2};
+
+  /* Semantic */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error:   #EF4444;
+  --color-info:    #3B82F6;
 }
 
 /* Light */
@@ -126,145 +173,186 @@ body.light {
 }
 \`\`\`
 
-**Functional** (both modes)
-
-| | |
-|---|---|
-| Success | \`#10B981\` |
-| Danger  | \`#EF4444\` · hover \`#DC2626\` |
-
 ---
 
-## Typography
+## 3. Typography System
 
 Font import:
 \`\`\`html
 <link href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 \`\`\`
 
-| Role | Size | Weight | Letter-spacing | Line-height | Color |
+**Font families**
+- Display / Headlines: ${font}
+- Body: ${t.body?.font || font}
+- Mono: ui-monospace, "SFMono-Regular", Consolas, monospace
+
+**Type scale**
+
+| Token | Size | Weight | Letter-spacing | Line-height | Usage |
 |---|---|---|---|---|---|
-| Display / Hero H1 | \`clamp(2.75rem, 5vw, 4rem)\` | ${t.headlines?.weight || '800'} | \`-0.03em\` | 1.1 | \`var(--text)\` |
-| Title / H2 | \`clamp(1.75rem, 3vw, 2.5rem)\` | ${t.sub?.weight || '700'} | \`-0.02em\` | 1.15 | \`var(--text)\` |
-| Card name | \`18px\` | ${t.sub?.weight || '700'} | \`-0.02em\` | — | \`var(--text)\` |
-| Body | \`16px\` | ${t.body?.weight || '400'} | — | 1.65 | \`var(--text)\` |
-| Secondary | \`14px\` | ${t.body?.weight || '400'} | — | 1.60 | \`var(--text-2)\` |
-| Caption | \`13px\` | ${t.captions?.weight || '400'} | — | 1.55 | \`var(--text-2)\` |
-| Label | \`11px uppercase\` | 700 | \`0.10em\` | — | \`var(--text-2)\` |
-| Eyebrow | \`10px uppercase\` | 700 | \`0.16em\` | — | \`var(--accent)\` |
+| --type-hero | \`clamp(2.75rem, 5vw, 4rem)\` | ${t.headlines?.weight || '800'} | \`-0.03em\` | 1.1 | Hero H1 |
+| --type-h1   | \`clamp(2rem, 3.5vw, 3rem)\`   | ${t.headlines?.weight || '800'} | \`-0.03em\` | 1.1 | Page title |
+| --type-h2   | \`clamp(1.75rem, 3vw, 2.5rem)\` | ${t.sub?.weight || '700'} | \`-0.02em\` | 1.15 | Section title |
+| --type-h3   | \`1.25rem\`  | ${t.sub?.weight || '700'} | \`-0.01em\` | 1.3 | Card title |
+| --type-body | \`1rem\`     | ${t.body?.weight || '400'} | \`0\` | 1.65 | Body copy |
+| --type-caption | \`0.8125rem\` | ${t.captions?.weight || '400'} | \`0\` | 1.55 | Labels / meta |
+| --type-button  | \`0.6875rem\` | 700 | \`0.10em\` | 1 | CTA text |
+| --type-eyebrow | \`0.625rem\`  | 700 | \`0.16em\` | 1 | Section eyebrows |
 
 ---
 
-## Spacing
+## 4. Spacing System
 
-4px base unit. All values are multiples of 4.
+4px base unit.
 
-| Token | px |
+| Token | Value | Usage |
+|---|---|---|
+| --space-2xs | 4px  | Inline gaps, icon padding |
+| --space-xs  | 8px  | Icon + text gap |
+| --space-sm  | 12px | Small component padding |
+| --space-md  | 16px | Card padding, form rows |
+| --space-lg  | 24px | Section inner spacing |
+| --space-xl  | 40px | Large component spacing |
+| --space-2xl | ${spSm} | Section vertical padding |
+| --space-3xl | ${spLg} | Hero / major separation |
+
+---
+
+## 5. Layout System
+
+| | |
 |---|---|
-| --sp-1 | 4 |
-| --sp-2 | 8 |
-| --sp-3 | 12 |
-| --sp-4 | 16 |
-| --sp-6 | 24 |
-| --sp-8 | 32 |
-| --sp-10 | 40 |
-| --sp-12 | 48 |
-| --sp-16 | 64 |
-| --sp-20 | 80 |
+| Max container | 1200px |
+| Section padding | \`${spSm} 48px\` desktop · \`48px 20px\` mobile |
+| Header height | 56px |
+| Mobile breakpoint | 768px |
+| Hero pattern | ${heroPatternDesc} |
+| Section rhythm | ${l.sectionSpacing || 'balanced'} — consistent vertical spacing between all sections |
+| Card grid | 3-col desktop → 2-col tablet → 1-col mobile |
+| Text/media relationship | defined by hero pattern above |
+| Alignment | Left-start default; center for full-width sections only |
 
 ---
 
-## Components
+## 6. Shape System
 
-### Buttons
-\`border-radius: 0\` · height \`36px\` · ${font} 700 · 10px uppercase · ls 0.10em
+| Token | Value | Usage |
+|---|---|---|
+| --radius-none | 0px   | Sharp elements (default for blocks) |
+| --radius-sm   | ${radSm}  | Small UI — badges, tags, chips |
+| --radius-md   | ${rad}   | Cards, inputs, buttons |
+| --radius-lg   | ${radLg} | Large panels, modals |
+| --radius-full | 999px | Pills, avatars, toggles |
 
 \`\`\`css
-.btn-primary { background: var(--accent); border: 1px solid var(--accent); color: #fff; }
+:root {
+  --radius-none: 0px;
+  --radius-sm:   ${radSm};
+  --radius-md:   ${rad};
+  --radius-lg:   ${radLg};
+  --radius-full: 999px;
+}
+\`\`\`
+
+---
+
+## 7. Border System
+
+\`\`\`css
+--border-subtle: 1px solid var(--border);
+--border-default: 1px solid var(--border-md);
+--border-strong: 1px solid var(--border-hi);
+--divider: 1px solid var(--border);
+\`\`\`
+
+---
+
+## 8. Shadow / Elevation System
+
+| Token | Value | Usage |
+|---|---|---|
+| --shadow-sm | ${shadowSm} | Small cards, dropdowns |
+| --shadow-md | ${shadowMd} | Floating panels, tooltips |
+| --shadow-lg | ${shadowLg} | Modals, hero mockups |
+
+---
+
+## 9. Components
+
+### Buttons
+height \`36px\` (lg: 44px) · ${font} 700 · 10px uppercase · letter-spacing 0.10em · border-radius \`var(--radius-md)\`
+
+\`\`\`css
+.btn-primary { background: var(--accent); border: 1px solid var(--accent); color: #fff; border-radius: var(--radius-md); }
 .btn-primary:hover { opacity: 0.88; }
 
-.btn-ghost { background: transparent; border: 1px solid var(--border-md); color: var(--text-2); }
+.btn-ghost { background: transparent; border: 1px solid var(--border-md); color: var(--text-2); border-radius: var(--radius-md); }
 .btn-ghost:hover { border-color: var(--border-hi); color: var(--text); }
 
-.btn-danger { background: #EF4444; border: 1px solid #EF4444; color: #fff; }
-.btn-danger:hover { background: #DC2626; border-color: #DC2626; }
-
+.btn-danger { background: var(--color-error); border: 1px solid var(--color-error); color: #fff; border-radius: var(--radius-md); }
 .btn-lg { height: 44px; padding: 0 24px; font-size: 11px; }
 \`\`\`
 
-### Badges
-\`border-radius: 999px\` · 10px/700 uppercase · padding \`2px 10px\`
-
-\`\`\`css
-.badge-do   { background: rgba(16,185,129,0.10); color: #10B981; border: 1px solid rgba(16,185,129,0.20); }
-.badge-dont { background: rgba(239,68,68,0.10);  color: #EF4444; border: 1px solid rgba(239,68,68,0.20); }
-.badge-new  { background: rgba(139,92,246,0.10); color: var(--accent); border: 1px solid rgba(139,92,246,0.20); }
-\`\`\`
-
 ### Cards
-\`border-radius: 0\` · \`border: 1px solid var(--border-md)\` · no shadow
+${cardBorderNote} · border-radius \`var(--radius-md)\` · shadow: \`var(--shadow-sm)\`
 
 \`\`\`css
-.card { background: var(--bg-card); border: 1px solid var(--border-md); transition: background 0.12s; }
+.card { background: var(--bg-card); border: var(--border-default); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); transition: background 0.12s; }
 .card:hover { background: var(--bg-hover); }
 .card-band { height: 3px; background: var(--accent); }
 \`\`\`
 
 ### Inputs
-\`border-radius: 0\` · padding \`10px 12px\` · font-size \`13px\`
+height \`40px\` · padding \`10px 12px\` · font-size \`13px\` · border-radius \`var(--radius-md)\`
 
 \`\`\`css
-.input { background: var(--bg); border: 1px solid var(--border-md); color: var(--text); font-family: '${font}', sans-serif; }
-.input:focus { border-color: var(--accent); outline: none; }
+.input { background: var(--bg); border: var(--border-default); color: var(--text); border-radius: var(--radius-md); font-family: '${font}', sans-serif; }
+.input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px ${hexToRgba(acc1, 0.15)}; }
 .input::placeholder { color: var(--text-3); }
 \`\`\`
 
-### Grid
+### Badges
+border-radius \`var(--radius-full)\` · 10px/700 uppercase · padding \`2px 10px\`
+
 \`\`\`css
-.grid { display: grid; gap: 1px; background: var(--border-md); border: 1px solid var(--border-md); }
-.grid-cell { background: var(--bg-card); padding: 24px 20px; }
-.grid-cell:hover { background: var(--bg-hover); }
+.badge-do      { background: rgba(16,185,129,0.10); color: var(--color-success); border: 1px solid rgba(16,185,129,0.20); border-radius: var(--radius-full); }
+.badge-danger  { background: rgba(239,68,68,0.10);  color: var(--color-error);   border: 1px solid rgba(239,68,68,0.20);  border-radius: var(--radius-full); }
+.badge-warning { background: rgba(245,158,11,0.10); color: var(--color-warning); border: 1px solid rgba(245,158,11,0.20); border-radius: var(--radius-full); }
+.badge-info    { background: rgba(59,130,246,0.10); color: var(--color-info);    border: 1px solid rgba(59,130,246,0.20); border-radius: var(--radius-full); }
 \`\`\`
 
 ---
 
-## Motion
+## 10. Motion
 
-| Speed | Duration | Use |
+| Speed | Duration | Usage |
 |---|---|---|
-| Fast | 80ms | Icon hovers, micro state changes |
-| Normal | 150ms | Buttons, inputs, nav |
-| Slow | 300ms | Panels, overlays, cards |
+| Fast   | 80ms  | Icon hovers, micro state changes |
+| Normal | 150ms | Buttons, inputs, nav, cards |
+| Slow   | 300ms | Panels, overlays, page transitions |
 
 \`\`\`css
-transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
 \`\`\`
+- Scroll behavior: smooth
+- No parallax or transform-heavy animations
+- Hover: opacity or border-color shift only — no layout shifts
 
 ---
 
-## Layout
+## 11. Rules
 
-| | |
-|---|---|
-| Max width | 1200px |
-| Section padding | \`80px 48px\` desktop · \`48px 20px\` mobile |
-| Header height | 56px |
-| Mobile breakpoint | 768px |
-
----
-
-## Rules
-
-1. Use only CSS variables from Tokens — no hardcoded colors
+1. Use only CSS variables — no hardcoded colors except semantic (#10B981, #EF4444, #F59E0B, #3B82F6)
 2. ${font} typeface only — load via Google Fonts CDN
-3. Dark-first — always implement both modes
-4. No shadows anywhere
-5. 4px grid — all spacing is a multiple of 4
-6. Zero border-radius on block elements — 999px on badges/tags only
-7. \`--accent\` is primary · \`--accent-2\` is secondary, use sparingly
-8. Functional colors for semantic states only
-9. Eyebrows always in \`--accent\`
-10. Motion is subtle — 80–300ms, ease, color/border/opacity only
+3. Dark-first — always implement both modes via \`body.light\`
+4. 4px grid — all spacing is a multiple of 4
+5. Border-radius: \`var(--radius-md)\` on all block elements; \`var(--radius-full)\` on pills/tags only
+6. Shadow: \`var(--shadow-sm)\` on cards, \`var(--shadow-md)\` on floating panels
+7. \`--accent\` is primary; \`--accent-2\` is secondary — use sparingly
+8. Semantic color tokens for states only (\`--color-success\`, \`--color-error\`, etc.)
+9. Eyebrows always in \`var(--accent)\`
+10. Motion is subtle — 80–300ms ease — color/border/opacity only, no layout animation
 `;
 }
 
@@ -390,7 +478,12 @@ export default function Stage045Gate({ project, onComplete }) {
   const [generating,   setGenerating]   = useState(false);
   const [genError,     setGenError]     = useState('');
   const [saving,       setSaving]       = useState(false);
-  const [panelTab,     setPanelTab]     = useState(0); // 0 = visual, 1 = markdown
+  const [panelTab,     setPanelTab]     = useState(0); // 0 = visual, 1 = design system, 2 = scaffold
+
+  // Scaffold
+  const [scaffoldHtml,       setScaffoldHtml]       = useState('');
+  const [scaffoldGenerating, setScaffoldGenerating] = useState(false);
+  const [scaffoldError,      setScaffoldError]      = useState('');
 
   // Per-tab state
   const [refUrl,      setRefUrl]      = useState('');
@@ -482,6 +575,16 @@ export default function Stage045Gate({ project, onComplete }) {
       }
     };
     reader.readAsText(file);
+  };
+
+  // ── Scaffold ───────────────────────────────────────────────────────────────
+  const handleGenerateScaffold = async () => {
+    setScaffoldGenerating(true); setScaffoldError('');
+    try {
+      const { data } = await api.post(`/projects/${project.id}/direction/generate-scaffold`, { tokens });
+      setScaffoldHtml(data.html || '');
+    } catch (err) { setScaffoldError(err.response?.data?.error || err.message); }
+    finally { setScaffoldGenerating(false); }
   };
 
   // ── Confirm ────────────────────────────────────────────────────────────────
@@ -612,7 +715,7 @@ export default function Stage045Gate({ project, onComplete }) {
       }}>
         {/* Tabs */}
         <div style={{ display: 'flex' }}>
-          {['Design System', 'Markdown'].map((label, i) => (
+          {['Visual', 'Design System', 'Scaffold'].map((label, i) => (
             <button key={i} onClick={() => setPanelTab(i)} style={{
               padding: '11px 14px', background: 'transparent', border: 'none',
               borderBottom: panelTab === i ? '2px solid var(--accent)' : '2px solid transparent',
@@ -630,13 +733,13 @@ export default function Stage045Gate({ project, onComplete }) {
         </button>
       </div>
 
-      {/* ── Markdown view ── */}
+      {/* ── Tab 1: Design System markdown ── */}
       {panelTab === 1 && (
         <textarea
           readOnly
           value={buildDesignSystemMd(tokens)}
           style={{
-            width: '100%', minHeight: 360, padding: 20,
+            width: '100%', minHeight: 420, padding: 20,
             background: 'var(--bg)', color: 'var(--text-2)',
             fontFamily: 'monospace', fontSize: 11, lineHeight: 1.7,
             border: 'none', resize: 'vertical',
@@ -644,7 +747,56 @@ export default function Stage045Gate({ project, onComplete }) {
         />
       )}
 
-      {/* ── Visual view ── */}
+      {/* ── Tab 2: Scaffold wireframe ── */}
+      {panelTab === 2 && (
+        <div style={{ padding: 16 }}>
+          {!scaffoldHtml ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.6 }}>
+                Generate a grayscale structural wireframe based on the layout profile extracted from the reference.
+                Shows section order, grid patterns, proportions and content hierarchy — no color, no brand.
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={handleGenerateScaffold}
+                disabled={scaffoldGenerating}
+                style={{ fontSize: 11 }}
+              >
+                {scaffoldGenerating
+                  ? <><span style={{ animation: 'pulse 1s infinite' }}>●</span> Generating wireframe…</>
+                  : '⬡ Generate Scaffold →'}
+              </button>
+              {scaffoldError && (
+                <div style={{ fontSize: 11, color: '#ef4444' }}>{scaffoldError}</div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button className="btn btn-ghost" onClick={handleGenerateScaffold} disabled={scaffoldGenerating} style={{ fontSize: 10 }}>
+                  {scaffoldGenerating ? '● Regenerating…' : '↺ Regenerate'}
+                </button>
+                <button className="btn btn-ghost" style={{ fontSize: 10 }}
+                  onClick={() => {
+                    const w = window.open('', '_blank');
+                    w.document.write(scaffoldHtml);
+                    w.document.close();
+                  }}>
+                  ↗ Open full page
+                </button>
+              </div>
+              <iframe
+                srcDoc={scaffoldHtml}
+                style={{ width: '100%', height: 640, border: '1px solid var(--border-md)', background: '#fff' }}
+                title="Scaffold wireframe"
+                sandbox="allow-scripts"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab 0: Visual view ── */}
       {panelTab === 0 && <>
       {/* Name field */}
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
