@@ -43,7 +43,7 @@ app.post('/api/projects/:id/analyze-images', upload.array('images', 10), async (
         ...imageContent,
         { type: 'text', text: 'Analyze these reference images for visual design direction. Extract: color palette, typography feel, layout patterns, spacing density, visual style (minimal/dense/editorial/corporate), mood, and any distinctive design elements. Format as structured notes for a designer.' },
       ],
-    }], 'google/gemini-flash-1.5');
+    }], 'anthropic/claude-sonnet-4-5');
 
     res.json({ notes });
   } catch (err) {
@@ -54,30 +54,30 @@ app.post('/api/projects/:id/analyze-images', upload.array('images', 10), async (
 // ── Token extraction helper ────────────────────────────────────────────────────
 const TOKEN_SCHEMA = `Return ONLY a valid JSON object — no explanation, no markdown, no code fences:
 {
-  "name": "2-3 word evocative name (e.g. 'Carbon Wave', 'Ivory Stack')",
+  "name": "2-3 word evocative name for this design system (e.g. 'Dark Orbit', 'Ivory Stack')",
   "colors": {
-    "background": "#hex — main page background",
-    "bgCard":     "#hex — card/panel surface, slightly lighter than bg",
-    "border":     "#hex — subtle divider/border",
-    "text":       "#hex — primary text, high contrast on bg",
-    "accent01":   "#hex — primary CTA/highlight color",
-    "accent02":   "#hex — secondary accent, different hue"
+    "background": "#hex — the large dominant surface color covering 80%+ of the page (near-black for dark sites, near-white for light sites)",
+    "bgCard":     "#hex — card or panel surface color, subtly different from background (slightly lighter on dark, slightly darker on light)",
+    "border":     "#hex — the fine divider/outline color between elements — usually very low contrast against background",
+    "text":       "#hex — THE COLOR OF BODY COPY AND PARAGRAPH TEXT. On dark backgrounds this is ALWAYS near-white (#E0E0E0 to #FFFFFF). On light backgrounds this is ALWAYS near-black (#111111 to #333333). NEVER assign a bright, saturated, or vivid color to this field — text is always neutral.",
+    "accent01":   "#hex — the PRIMARY brand/CTA color: main button fill, key links, active highlights. This IS allowed to be vivid/saturated.",
+    "accent02":   "#hex — the SECONDARY brand accent, different hue from accent01. Use the second most prominent brand color."
   },
   "typography": {
-    "headlines": { "font": "Google Fonts name", "weight": "800" },
-    "sub":       { "font": "Google Fonts name", "weight": "600" },
-    "body":      { "font": "Google Fonts name", "weight": "400" },
-    "captions":  { "font": "Google Fonts name", "weight": "300" }
+    "headlines": { "font": "Exact font family name as it appears (e.g. 'Google Sans Display', 'Inter', 'Manrope')", "weight": "numeric weight e.g. 700" },
+    "sub":       { "font": "Same family or sub-variant used for subheadings", "weight": "numeric weight e.g. 600" },
+    "body":      { "font": "Font used for body/paragraph text", "weight": "numeric weight e.g. 400" },
+    "captions":  { "font": "Font used for labels, captions, metadata", "weight": "numeric weight e.g. 300 or 400" }
   },
   "layout": {
-    "borderRadius": "one of: 0px | 4px | 8px | 12px | 20px | 999px — dominant radius of UI elements",
+    "borderRadius": "one of: 0px | 4px | 8px | 12px | 20px | 999px — the dominant border-radius of cards, buttons, and UI blocks",
     "shadowStyle":  "one of: none | subtle | prominent",
     "heroPattern":  "one of: centered | left-text-right-media | right-text-left-media | full-width | split-equal",
     "sectionSpacing": "one of: compact | balanced | airy",
     "cardStyle":    "one of: flat | bordered | shadow | elevated | glass",
     "navStyle":     "one of: minimal | standard | prominent | transparent-blur",
     "personality":  "one of: minimal | bold | editorial | technical | corporate | playful | luxury",
-    "sections":     ["ordered list of page section ids, e.g.: hero, trust-strip, features-grid, features-dark, use-cases, testimonials, pricing, cta, faq, footer"]
+    "sections":     ["ordered list of major page section ids visible on the page, e.g.: hero, trust-strip, features-grid, features-dark, use-cases, testimonials, pricing, cta, faq, footer"]
   }
 }`;
 
@@ -118,39 +118,80 @@ app.post('/api/projects/:id/direction/generate-url', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'url required' });
   try {
     const { scrapeForDesignAnalysis } = await import('./services/scraper.js');
-    const { text, screenshotBase64, hexColors } = await scrapeForDesignAnalysis(url);
+    const { text, screenshotBase64, hexColors, cssVars, screenshotSource } = await scrapeForDesignAnalysis(url);
     const { callModel } = await import('./services/claude.js');
 
     let raw;
 
     if (screenshotBase64) {
-      // ── Vision path: Claude reads actual pixels ───────────────────────────
-      const colorHint = hexColors.length
-        ? `\nCSS hex colors found in page source (use these exact values when they match what you see): ${hexColors.join(', ')}`
-        : '';
+      // ── Vision path: model reads actual pixels ────────────────────────────
+      console.log(`  [generate-url] using VISION path (screenshot source: ${screenshotSource})`);
+      const cv = cssVars || {};
+      // Separate computed element colors (most reliable) from CSS var palette
+      const computedLines = Object.entries(cv)
+        .filter(([k]) => k.startsWith('__computed'))
+        .map(([k, v]) => `${k.replace('__computed-', '')}: ${v}`)
+        .join('\n');
+      const cssVarLines = Object.entries(cv)
+        .filter(([k, v]) => !k.startsWith('__computed') && /^#[0-9a-fA-F]{6}/.test(v))
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+      const colorHint = [
+        computedLines ? `COMPUTED ELEMENT COLORS (highest accuracy — actual rendered values):\n${computedLines}` : '',
+        cssVarLines   ? `CSS custom properties from live page:\n${cssVarLines}` : '',
+        hexColors.length ? `Hex values from HTML source: ${hexColors.slice(0, 20).join(', ')}` : '',
+      ].filter(Boolean).join('\n\n');
       raw = await callModel([{
         role: 'user',
         content: [
           { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } },
           { type: 'text', text:
-`You are a senior brand designer. Analyze this SCREENSHOT of ${url}.
+`You are a senior brand designer performing a precise design audit of ${url}.
 
-Read the EXACT colors, fonts, radius, spacing, and layout structure directly from the pixels — do not guess.
-${colorHint}
+You have TWO sources of truth — use them together:
+
+1. SCREENSHOT (attached) → use for LAYOUT analysis: hero pattern, section order, card grid structure, nav style, spacing density, overall visual personality.
+
+2. CSS CUSTOM PROPERTIES (below) → use for EXACT COLORS: these are the actual computed values from the live page. They are more accurate than reading pixels from a screenshot.
+
+${colorHint ? colorHint : '(No CSS vars available — read colors from the screenshot instead)'}
+
+COLOR ASSIGNMENT RULES:
+- background: the dominant canvas color — darkest on dark sites, lightest on light sites. Look for vars named --bg, --canvas, --surface, --palette-*-1200/1100 (darkest greys on dark sites), --color-background
+- bgCard: the elevated surface — slightly lighter/different from background. Look for --surface, --card-bg, --palette-*-1100/1000
+- border: the fine divider color. Look for --outline, --border, --divider, --theme-outline
+- text: the NEUTRAL body copy color — near-white (#D0–#FF) on dark sites, near-black (#11–#44) on light sites. NEVER a vivid color. Look for --on-surface, --text, --color-text-primary
+- accent01: the PRIMARY brand/CTA color — the most prominent vivid color (buttons, links). Look for --primary, --accent, --blue, --brand
+- accent02: the SECONDARY brand color, different hue. Look for --secondary, --green, --red, second most prominent color
+
+CRITICAL: If the CSS vars show a near-black background (like #121317 or #080808), this is a DARK SITE — text MUST be near-white even if the screenshot appears light (screenshots can capture pre-render state).
+
+For typography: read font-family from the rendered text in the screenshot. Name it exactly (e.g. "Google Sans Display", "Inter", "Manrope").
+
+For layout: use the screenshot to identify section order, hero pattern, grid structures, nav behavior.
 
 ${TOKEN_SCHEMA}` },
         ],
-      }], 'google/gemini-flash-1.5');
+      }], 'anthropic/claude-sonnet-4-5');
     } else {
-      // ── Text fallback: use HTML hex colors + markdown ─────────────────────
+      // ── Text fallback: HTML hex colors + markdown ─────────────────────────
+      console.log(`  [generate-url] using TEXT FALLBACK (no screenshot)`);
       const colorSection = hexColors.length
-        ? `\n\n## Hex Colors Extracted From Page CSS\n${hexColors.join(', ')}`
+        ? `\n\n## Hex Colors Extracted From Page CSS/Source\n${hexColors.join(', ')}`
         : '';
       raw = await callModel([{
         role: 'user',
-        content: `Extract design tokens from this site. Prioritize the CSS hex colors section for actual color values.
+        content: `You are a senior brand designer. Extract design tokens from this site's scraped content.
 
 SITE: ${url}
+
+CRITICAL COLOR RULES when assigning roles from the hex list:
+- background: the darkest (dark sites) or lightest (light sites) color — the main canvas
+- text: MUST be near-white on dark sites or near-black on light sites — NEVER a vivid color
+- accent01: the primary CTA/brand color — this can be vivid/saturated
+- accent02: the secondary brand color — different hue from accent01
+- Never assign a bright or saturated color to the "text" field
+
 ${text}${colorSection}
 
 ${TOKEN_SCHEMA}`,
@@ -182,7 +223,7 @@ Extract real colors visible in the images and identify the typography style.
 
 ${TOKEN_SCHEMA}` },
       ],
-    }], 'google/gemini-flash-1.5');
+    }], 'anthropic/claude-sonnet-4-5');
     const cleaned = raw.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
     res.json({ tokens: JSON.parse(cleaned) });
   } catch (err) {
@@ -334,7 +375,7 @@ body.light {
 
 Return ONLY the markdown. No explanation.` },
       ],
-    }], 'google/gemini-flash-1.5');
+    }], 'anthropic/claude-sonnet-4-5');
     res.json({ content });
   } catch (err) {
     res.status(500).json({ error: err.message });

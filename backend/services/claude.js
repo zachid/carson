@@ -22,14 +22,14 @@ function falHeaders() {
 }
 
 // Non-streaming call — returns text string
-export async function callModel(messages, model) {
+export async function callModel(messages, model, maxTokens = 4096) {
   const res = await fetch(FAL_URL, {
     method: 'POST',
     headers: falHeaders(),
     body: JSON.stringify({
       model: model || process.env.MODEL || 'anthropic/claude-sonnet-4-5',
       messages,
-      max_tokens: 2048,
+      max_tokens: maxTokens,
     }),
   });
   if (!res.ok) throw new Error(await res.text());
