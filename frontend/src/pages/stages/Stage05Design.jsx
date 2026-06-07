@@ -79,6 +79,7 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
     return v.length > 0 ? v.length - 1 : 0;
   });
   const [versionsReady, setVersionsReady] = useState(false);
+  const [syncing,       setSyncing]       = useState(false);
 
   // What's shown in the iframe: saved version if available, else existing stageData output
   const displayHtml = versions[activeV]?.html || existingHtml;
@@ -127,12 +128,27 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
   useEffect(() => {
     onMounted?.();
 
-    // Load versions from Firestore (source of truth) — update cache + state
-    fetchVersionsFromDB(project.id).then(dbVersions => {
-      if (dbVersions && dbVersions.length > 0) {
-        setVersions(dbVersions);
-        setActiveV(dbVersions.length - 1);
-        writeCache(project.id, dbVersions);
+    // Load from Firestore; if empty but localStorage has versions, auto-sync them up
+    fetchVersionsFromDB(project.id).then(async dbVersions => {
+      const cached = readCache(project.id);
+      if (dbVersions === null) {
+        // Network error — keep localStorage data
+        setVersionsReady(true);
+        return;
+      }
+      if (dbVersions.length === 0 && cached.length > 0) {
+        // First time using Firestore — upload existing localStorage versions
+        console.log(`[s5] Syncing ${cached.length} local version(s) to Firestore…`);
+        for (const v of cached) {
+          await saveVersionToDB(project.id, v.html, v.label);
+        }
+        // Re-fetch after sync
+        const synced = await fetchVersionsFromDB(project.id);
+        if (synced && synced.length > 0) {
+          setVersions(synced); setActiveV(synced.length - 1); writeCache(project.id, synced);
+        }
+      } else if (dbVersions.length > 0) {
+        setVersions(dbVersions); setActiveV(dbVersions.length - 1); writeCache(project.id, dbVersions);
       }
       setVersionsReady(true);
     });
@@ -239,6 +255,17 @@ export default function Stage05Design({ project, stageData, onComplete, onContin
           </div>
         )}
 
+        {!versionsReady && <span style={{ fontSize: 10, color: 'var(--text-3)' }}>● Syncing…</span>}
+        {versionsReady && (
+          <button className="btn btn-ghost" style={{ fontSize: 10 }} disabled={syncing} onClick={async () => {
+            setSyncing(true);
+            const cached = readCache(project.id);
+            for (const v of cached) await saveVersionToDB(project.id, v.html, v.label);
+            const fresh = await fetchVersionsFromDB(project.id);
+            if (fresh?.length) { setVersions(fresh); setActiveV(fresh.length - 1); writeCache(project.id, fresh); }
+            setSyncing(false);
+          }}>{syncing ? '● Syncing…' : '↑ Sync'}</button>
+        )}
         <button className="btn btn-ghost" onClick={handleThemeToggle}>◑ Toggle Theme</button>
         <button className="btn btn-ghost" onClick={() => iframeRef.current?.requestFullscreen?.()}>⛶ Fullscreen</button>
         <button className="btn btn-ghost" onClick={() => { setEditHtml(displayHtml); setEditMode(e => !e); }}>
