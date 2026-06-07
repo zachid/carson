@@ -10,12 +10,13 @@ const api = axios.create({
 export default api;
 
 // SSE-based stage runner
-export function streamStage(projectId, stageNum, { onChunk, onDone, onError }) {
+export function streamStage(projectId, stageNum, { onChunk, onDone, onError, body = {} }) {
   const controller = new AbortController();
 
   fetch(`${import.meta.env.VITE_API_URL || ''}/api/projects/${projectId}/run/${stageNum}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
     signal: controller.signal,
   }).then(async (res) => {
     if (!res.ok) {

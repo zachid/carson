@@ -159,7 +159,10 @@ Content:
 ${stage01Output}`;
 }
 
-function stage04Prompt({ stage02Output, stage03Output }) {
+function stage04Prompt({ stage02Output, stage03Output, siteContent }) {
+  const siteSection = siteContent?.trim()
+    ? `\n\n---\n\nUPLOADED SITE CONTENT — use this as the structural and copy base for the blueprint. Extract the existing page sections, navigation, messaging and content areas from it. Preserve what works; improve what the gap analysis flagged.\n\n${siteContent.trim()}\n\n---`
+    : '';
   return `Based on the brand audit and gap analysis, produce:
 
 1. layout-blueprint: new page architecture section by section
@@ -169,7 +172,7 @@ function stage04Prompt({ stage02Output, stage03Output }) {
 2. copy: proposed copy for every section
    (headline max 10 words · sub-headline · body · CTA label · microcopy)
    Tone: outcome-first, evidence-based, no hype.
-
+${siteSection}
 Brand audit:
 ${stage02Output}
 

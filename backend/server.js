@@ -400,6 +400,40 @@ Return ONLY the markdown content. No explanation.`,
   }
 });
 
+// ── Parse uploaded content file (PDF / DOCX / MD / TXT) ──────────────────────
+app.post('/api/parse-content', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+  const { mimetype, buffer, originalname } = req.file;
+  const name = (originalname || '').toLowerCase();
+
+  try {
+    let text = '';
+
+    if (mimetype === 'application/pdf' || name.endsWith('.pdf')) {
+      // pdf-parse ESM-safe dynamic import
+      const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
+      const result = await pdfParse(buffer);
+      text = result.text;
+    } else if (
+      mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      name.endsWith('.docx')
+    ) {
+      const mammoth = (await import('mammoth')).default;
+      const result = await mammoth.extractRawText({ buffer });
+      text = result.value;
+    } else {
+      // .md / .txt / .doc — read as UTF-8 text
+      text = buffer.toString('utf8');
+    }
+
+    // Trim whitespace runs, cap at 40 000 chars so it fits in context
+    text = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 40000);
+    res.json({ text });
+  } catch (err) {
+    res.status(500).json({ error: `Parse failed: ${err.message}` });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Carson backend running on :${PORT}`));
 

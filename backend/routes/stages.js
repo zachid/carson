@@ -30,7 +30,7 @@ router.post('/run/:stageNum', async (req, res) => {
 
     await upsertStage(projectId, stageNum, 'running', null);
 
-    const context = await buildContext(projectId, stageNum, project);
+    const context = await buildContext(projectId, stageNum, project, req.body || {});
 
     // Intercept res.write/end to capture completed text for Firestore
     const origWrite = res.write.bind(res);
@@ -73,7 +73,7 @@ async function upsertStage(projectId, stageNum, status, output) {
     .set({ stage_num: stageNum, status, output, updated_at: now() }, { merge: true });
 }
 
-async function buildContext(projectId, stageNum, project) {
+async function buildContext(projectId, stageNum, project, body = {}) {
   const getOutput = async (num) => {
     const doc = await db.collection('projects').doc(projectId)
       .collection('stages').doc(String(num)).get();
@@ -91,7 +91,7 @@ async function buildContext(projectId, stageNum, project) {
     }
     case 2: return { stage01Output: await getOutput(1) };
     case 3: return { stage01Output: await getOutput(1) };
-    case 4: return { stage02Output: await getOutput(2), stage03Output: await getOutput(3) };
+    case 4: return { stage02Output: await getOutput(2), stage03Output: await getOutput(3), siteContent: body.siteContent || '' };
     case 5: return {
       designSystem:   direction?.design_system,
       referenceNotes: direction?.reference_notes,
