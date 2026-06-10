@@ -11,8 +11,14 @@ const api = axios.create({
 // Attach Firebase ID token to every axios request automatically
 api.interceptors.request.use(async (config) => {
   if (firebaseConfigured && auth?.currentUser) {
-    const token = await auth.currentUser.getIdToken();
-    config.headers.Authorization = `Bearer ${token}`;
+    try {
+      const token = await auth.currentUser.getIdToken(/* forceRefresh */ false);
+      config.headers.Authorization = `Bearer ${token}`;
+    } catch (err) {
+      console.warn('[auth] getIdToken failed:', err.message);
+      // Token unrecoverable — sign out so the user sees the login screen
+      try { await auth.signOut(); } catch {}
+    }
   }
   return config;
 });
