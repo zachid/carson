@@ -103,7 +103,7 @@ function ProjectCard({ project, onClick, onDelete }) {
 }
 
 export default function Dashboard({ onOpenProject }) {
-  const { projects, loading, fetchProjects, createProject, deleteProject } = useProjectStore();
+  const { projects, loading, error, fetchProjects, createProject, deleteProject } = useProjectStore();
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => { fetchProjects(); }, []);
@@ -126,6 +126,19 @@ export default function Dashboard({ onOpenProject }) {
           + New Project
         </button>
       </div>
+
+      {error && (
+        <div style={{
+          marginBottom: 24, padding: '12px 16px',
+          background: 'var(--bg-card)', border: '1px solid var(--danger)',
+          fontSize: 12, color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        }}>
+          <span>Could not load projects: <strong>{error}</strong></span>
+          <button className="btn btn-ghost" style={{ height: 26, padding: '0 10px', fontSize: 11 }} onClick={fetchProjects}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {loading && projects.length === 0 ? (
         <div className="secondary-text">Loading…</div>
