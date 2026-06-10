@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { auth } from '../firebase.js';
+import { auth, firebaseConfigured } from '../firebase.js';
 
 const BASE = import.meta.env.VITE_API_URL || '';
 
@@ -8,11 +8,10 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach Firebase ID token to every request automatically
+// Attach Firebase ID token to every axios request automatically
 api.interceptors.request.use(async (config) => {
-  const user = auth.currentUser;
-  if (user) {
-    const token = await user.getIdToken();
+  if (firebaseConfigured && auth?.currentUser) {
+    const token = await auth.currentUser.getIdToken();
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -20,54 +19,56 @@ api.interceptors.request.use(async (config) => {
 
 export default api;
 
-// SSE-based stage runner — also attaches auth token
-export async function streamStage(projectId, stageNum, { onChunk, onDone, onError, body = {} }) {
+// SSE-based stage runner
+// Returns the abort function synchronously (same API as before)
+export function streamStage(projectId, stageNum, { onChunk, onDone, onError, body = {} }) {
   const controller = new AbortController();
 
-  // Get a fresh token for the SSE request
-  const user = auth.currentUser;
-  const token = user ? await user.getIdToken() : null;
-
-  fetch(`${import.meta.env.VITE_API_URL || ''}/api/projects/${projectId}/run/${stageNum}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  }).then(async (res) => {
-    if (!res.ok) {
-      const err = await res.text();
-      onError?.(new Error(err));
-      return;
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n\n');
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const evt = JSON.parse(line.slice(6));
-          if (evt.type === 'chunk') onChunk?.(evt.text);
-          if (evt.type === 'done') onDone?.(evt.fullText);
-          if (evt.type === 'error') onError?.(new Error(evt.message));
-        } catch {}
+  // Kick off async work without making the outer function async
+  (async () => {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (firebaseConfigured && auth?.currentUser) {
+        headers.Authorization = `Bearer ${await auth.currentUser.getIdToken()}`;
       }
+
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/projects/${projectId}/run/${stageNum}`,
+        { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal }
+      );
+
+      if (!res.ok) {
+        const err = await res.text();
+        onError?.(new Error(err));
+        return;
+      }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.type === 'chunk') onChunk?.(evt.text);
+            if (evt.type === 'done')  onDone?.(evt.fullText);
+            if (evt.type === 'error') onError?.(new Error(evt.message));
+          } catch {}
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') onError?.(err);
     }
-  }).catch(err => {
-    if (err.name !== 'AbortError') onError?.(err);
-  });
+  })();
 
   return () => controller.abort();
 }
