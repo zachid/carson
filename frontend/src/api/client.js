@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { auth } from '../firebase.js';
 
 const BASE = import.meta.env.VITE_API_URL || '';
 
@@ -7,15 +8,32 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Attach Firebase ID token to every request automatically
+api.interceptors.request.use(async (config) => {
+  const user = auth.currentUser;
+  if (user) {
+    const token = await user.getIdToken();
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 export default api;
 
-// SSE-based stage runner
-export function streamStage(projectId, stageNum, { onChunk, onDone, onError, body = {} }) {
+// SSE-based stage runner — also attaches auth token
+export async function streamStage(projectId, stageNum, { onChunk, onDone, onError, body = {} }) {
   const controller = new AbortController();
+
+  // Get a fresh token for the SSE request
+  const user = auth.currentUser;
+  const token = user ? await user.getIdToken() : null;
 
   fetch(`${import.meta.env.VITE_API_URL || ''}/api/projects/${projectId}/run/${stageNum}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
     signal: controller.signal,
   }).then(async (res) => {

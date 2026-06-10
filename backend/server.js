@@ -11,6 +11,7 @@ import fs from 'fs';
 import projectRoutes from './routes/projects.js';
 import stageRoutes from './routes/stages.js';
 import exportRoutes from './routes/export.js';
+import { requireAuth } from './middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -21,6 +22,9 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
+
+// All /api routes require a valid Firebase ID token
+app.use('/api', requireAuth);
 
 // Routes
 app.use('/api/projects', projectRoutes);
