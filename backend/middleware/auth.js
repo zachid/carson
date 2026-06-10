@@ -1,4 +1,5 @@
 import admin from 'firebase-admin';
+import { ensureFirebase } from '../db/db.js';
 
 /**
  * Express middleware — verifies the Firebase ID token in the
@@ -16,10 +17,12 @@ export async function requireAuth(req, res, next) {
   }
 
   try {
+    ensureFirebase(); // make sure admin app is initialized (cold start)
     const decoded = await admin.auth().verifyIdToken(token);
     req.user = decoded; // { uid, email, name, picture, ... }
     next();
-  } catch {
-    res.status(401).json({ error: 'Invalid or expired auth token' });
+  } catch (err) {
+    console.error('[auth] verifyIdToken failed:', err.code || err.message, '| token len:', token.length);
+    res.status(401).json({ error: 'Invalid or expired auth token', code: err.code || null });
   }
 }
