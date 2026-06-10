@@ -7,8 +7,10 @@ const useProjectStore = create((set, get) => ({
   loading: false,
   error: null,
 
+  reset: () => set({ projects: [], currentProject: null, loading: false, error: null }),
+
   fetchProjects: async () => {
-    set({ loading: true });
+    set({ loading: true, projects: [], error: null });
     try {
       const { data } = await api.get('/projects');
       set({ projects: Array.isArray(data) ? data : [], loading: false });

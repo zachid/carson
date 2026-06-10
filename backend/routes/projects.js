@@ -25,12 +25,17 @@ router.get('/', async (req, res) => {
       }
       res.json(toDocs(snap));
     } else {
-      // Regular user — only their own projects
+      // Regular user — only their own projects.
+      // No orderBy here to avoid requiring a composite Firestore index; sort in JS.
       const snap = await db.collection('projects')
         .where('userId', '==', uid)
-        .orderBy('updated_at', 'desc')
         .get();
-      res.json(toDocs(snap));
+      const docs = toDocs(snap).sort((a, b) => {
+        const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        return tb - ta;
+      });
+      res.json(docs);
     }
   } catch (err) {
     res.status(500).json({ error: err.message });

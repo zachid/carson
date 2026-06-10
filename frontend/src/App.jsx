@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Project from './pages/Project.jsx';
+import useProjectStore from './store/projectStore.js';
 
 // ── User avatar + sign-out ────────────────────────────────────────────────────
 function UserMenu() {
@@ -91,9 +92,22 @@ function UserMenu() {
 function AppInner() {
   const { user, loading } = useAuth();
   const [currentProjectId, setCurrentProjectId] = useState(null);
+  const resetStore = useProjectStore(s => s.reset);
+  const prevUidRef = useRef(null);
 
   // Force light mode
   useEffect(() => { document.body.classList.add('light'); }, []);
+
+  // Wipe the project store whenever the signed-in user changes (or signs out)
+  // so a new user never sees a previous user's data.
+  useEffect(() => {
+    const uid = user?.uid ?? null;
+    if (uid !== prevUidRef.current) {
+      prevUidRef.current = uid;
+      resetStore();
+      setCurrentProjectId(null);
+    }
+  }, [user?.uid]);
 
   // Splash while Firebase resolves auth state
   if (loading) {
