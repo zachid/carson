@@ -67,6 +67,18 @@ router.post('/run/:stageNum', async (req, res) => {
   }
 });
 
+// PATCH /api/projects/:id/stages/:num/output — save manually edited output
+router.patch('/:num/output', async (req, res) => {
+  const { output } = req.body;
+  if (output === undefined) return res.status(400).json({ error: 'output required' });
+  try {
+    await upsertStage(req.params.id, parseInt(req.params.num), 'done', output);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 async function upsertStage(projectId, stageNum, status, output) {
   await db.collection('projects').doc(projectId)
     .collection('stages').doc(String(stageNum))
@@ -91,7 +103,14 @@ async function buildContext(projectId, stageNum, project, body = {}) {
     }
     case 2: return { stage01Output: await getOutput(1) };
     case 3: return { stage01Output: await getOutput(1) };
-    case 4: return { stage02Output: await getOutput(2), stage03Output: await getOutput(3), siteContent: body.siteContent || '' };
+    case 4: return {
+      stage02Output:  await getOutput(2),
+      stage03Output:  await getOutput(3),
+      siteContent:    body.siteContent   || '',
+      editRequest:    body.editRequest   || '',
+      currentOutput:  body.currentOutput || '',
+      editSection:    body.editSection   || '',
+    };
     case 5: return {
       designSystem:   direction?.design_system,
       referenceNotes: direction?.reference_notes,

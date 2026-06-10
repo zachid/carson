@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { IconDownload } from '../../components/Icons.jsx';
 
 function openPDF(title, markdown) {
   const win = window.open('', '_blank');
@@ -58,6 +59,8 @@ export function StageShell({
   input, status, output, onRun,
   runLabel = 'Run Stage', disabled,
   onContinue, nextLabel,
+  outputActions,  // extra JSX rendered in output header (left of Save PDF)
+  editPanel,      // JSX rendered between output header and output body
   children,
 }) {
   const [open, setOpen] = useState(false);
@@ -111,16 +114,20 @@ export function StageShell({
       {/* Output */}
       {output && (
         <div style={{ border: '1px solid var(--border-md)' }}>
-          <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ padding: '10px 24px', borderBottom: editPanel ? 'none' : '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <span className="eyebrow">Output</span>
-            <button
-              className="btn btn-ghost"
-              style={{ height: 28, padding: '0 10px', fontSize: 9 }}
-              onClick={() => openPDF(`${eyebrow} — ${title}`, output)}
-            >
-              ↓ Save PDF
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {outputActions}
+              <button
+                className="btn btn-ghost"
+                style={{ height: 28, padding: '0 10px', fontSize: 9, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                onClick={() => openPDF(`${eyebrow} — ${title}`, output)}
+              >
+                <IconDownload size={12} /> Save PDF
+              </button>
+            </div>
           </div>
+          {editPanel}
           <div className="markdown-output" style={{ padding: 24 }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{output}</ReactMarkdown>
           </div>

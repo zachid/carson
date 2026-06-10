@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { StageShell } from './StageShell.jsx';
 import { streamStage } from '../../api/client.js';
 import useProjectStore from '../../store/projectStore.js';
+import { IconEdit } from '../../components/Icons.jsx';
 
 function UrlEditor({ project }) {
   const { updateProject } = useProjectStore();
@@ -66,10 +67,10 @@ function UrlEditor({ project }) {
             </a>
             <button
               className="btn btn-ghost"
-              style={{ height: 28, padding: '0 10px', fontSize: 9, flexShrink: 0 }}
+              style={{ height: 28, padding: '0 10px', fontSize: 9, flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5 }}
               onClick={() => setEditing(true)}
             >
-              ✎ Edit
+              <IconEdit size={12} /> Edit
             </button>
           </>
         )}

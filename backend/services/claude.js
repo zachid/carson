@@ -159,19 +159,62 @@ Content:
 ${stage01Output}`;
 }
 
-function stage04Prompt({ stage02Output, stage03Output, siteContent }) {
+function stage04Prompt({ stage02Output, stage03Output, siteContent, editRequest, currentOutput, editSection }) {
+  // ── Edit / revision path ────────────────────────────────────────────────────
+  if (editRequest?.trim() && currentOutput?.trim()) {
+    const sectionFocus = editSection === 'layout'
+      ? 'Focus ONLY on the LAYOUT BLUEPRINT section. Keep the REVISED COPY section exactly as-is — reproduce it word for word.'
+      : editSection === 'copy'
+      ? 'Focus ONLY on the REVISED COPY section. Keep the LAYOUT BLUEPRINT section exactly as-is — reproduce it word for word.'
+      : 'Apply the changes where appropriate across both sections.';
+
+    return `You are revising an existing content blueprint based on a specific user request.
+
+CURRENT BLUEPRINT:
+${currentOutput}
+
+USER REQUEST:
+${editRequest.trim()}
+
+INSTRUCTIONS:
+- ${sectionFocus}
+- Apply the requested change precisely.
+- Return the COMPLETE revised blueprint — both parts — using EXACTLY these two headers:
+
+# LAYOUT BLUEPRINT
+[full layout section here]
+
+-- PART TWO: COPY
+[full copy section here]
+
+- Do not add commentary, preamble, or explanations — output only the blueprint.`;
+  }
+
+  // ── Full generation path ────────────────────────────────────────────────────
   const siteSection = siteContent?.trim()
     ? `\n\n---\n\nUPLOADED SITE CONTENT — use this as the structural and copy base for the blueprint. Extract the existing page sections, navigation, messaging and content areas from it. Preserve what works; improve what the gap analysis flagged.\n\n${siteContent.trim()}\n\n---`
     : '';
-  return `Based on the brand audit and gap analysis, produce:
+  return `Based on the brand audit and gap analysis, produce a blueprint in EXACTLY two parts using these exact headers:
 
-1. layout-blueprint: new page architecture section by section
-   (Hero → Problem → Solution → Benefits → Proof → Audience → FAQ → CTA → Footer)
-   For each: name · purpose · grid pattern · content blocks · CTA · visual suggestion
+# LAYOUT BLUEPRINT
 
-2. copy: proposed copy for every section
-   (headline max 10 words · sub-headline · body · CTA label · microcopy)
-   Tone: outcome-first, evidence-based, no hype.
+For each page section (Hero → Problem → Solution → Benefits → Proof → Audience → FAQ → CTA → Footer):
+- **Section name** and purpose
+- Grid pattern and layout structure
+- Content blocks and their placement
+- CTA placement and label
+- Visual suggestion / component type
+
+-- PART TWO: COPY
+
+For each section from the blueprint above, provide the full proposed copy:
+- Headline (max 10 words)
+- Sub-headline
+- Body copy
+- CTA label
+- Microcopy / supporting text
+
+Tone: outcome-first, evidence-based, no hype. Do not add any text outside these two parts.
 ${siteSection}
 Brand audit:
 ${stage02Output}
@@ -207,5 +250,16 @@ Hard requirements:
 - All sections: nav · hero · problem · solution · benefits · proof · audience · FAQ · CTA · footer
 - Responsive: mobile-first, breakpoints 640px and 1024px
 - Semantic HTML5, WCAG AA contrast
-- Return ONLY the raw HTML document. No explanation, no markdown, no code fences.`;
+- Return ONLY the raw HTML document. No explanation, no markdown, no code fences.
+
+ICON RULES — follow strictly unless the design.md uploaded above explicitly overrides:
+- NEVER use emoji characters (🚀 ✅ 📱 💡 🎯 ⭐ etc.) anywhere in the design — not as icons, decoration, or bullet points
+- NEVER use Unicode symbols (★ ✓ → ✔ ✦ ◆ etc.) as visual icons
+- ALL icons must be inline SVG — clean flat paths, single colour, no gradients, no drop shadows, no 3D effects
+- Visual style: geometric outline or solid, matching the Heroicons / Lucide / Feather aesthetic — simple, minimal, professional
+- Icon colour: inherit from CSS variable (var(--text-2) default, var(--accent) for highlighted/CTA icons)
+- Icon size: 18–24px, vertically aligned with adjacent text via display:flex + align-items:center, gap:8px
+- Each icon must be a purposeful, accurate SVG path — not a placeholder square or circle
+- If a section genuinely needs no icon, use none — do not force decorative icons
+- Exception: if the uploaded design system/reference notes above explicitly specify emoji usage or a 3D icon style, follow that specification instead`;
 }

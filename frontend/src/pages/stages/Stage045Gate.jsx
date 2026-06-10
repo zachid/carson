@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import useProjectStore from '../../store/projectStore.js';
 import api from '../../api/client.js';
+import {
+  IconEdit, IconClose, IconCheck, IconDownload, IconUpload,
+  IconRefresh, IconBookmark, IconBookmarkFill, IconCopy, IconLayout,
+} from '../../components/Icons.jsx';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -10,6 +14,14 @@ const RANDOM_NAMES = [
   'Lumen', 'Helix', 'Quartz', 'Basalt', 'Crest', 'Prism', 'Sable',
 ];
 const randomName = () => RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
+
+const THEMES_KEY = 'carson_saved_themes';
+function loadSavedThemes() {
+  try { return JSON.parse(localStorage.getItem(THEMES_KEY) || '[]'); } catch { return []; }
+}
+function persistSavedThemes(themes) {
+  try { localStorage.setItem(THEMES_KEY, JSON.stringify(themes)); } catch {}
+}
 
 const DEFAULT_TOKENS = {
   name: '',
@@ -43,7 +55,6 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-// Shift a hex colour toward white (positive) or black (negative)
 function hexShift(hex, amount) {
   if (!hex?.startsWith('#') || hex.length < 7) return hex;
   const clamp = v => Math.min(255, Math.max(0, v));
@@ -63,14 +74,12 @@ function buildDesignSystemMd(tokens) {
   const acc2 = c.accent02   || '#06B6D4';
   const font = t.headlines?.font || 'Inter';
 
-  // Derived dark tokens
   const bgHover  = hexShift(bgc,  6);
   const bdrMd    = hexShift(bdr, 12);
   const bdrHi    = hexShift(bdr, 30);
   const txt2     = hexToRgba(txt, 0.55);
   const txt3     = hexToRgba(txt, 0.28);
 
-  // Light mode
   const bgLight     = hexShift(txt,  10);
   const bgCardLight = '#FFFFFF';
   const bgHoverL    = hexShift(txt,  -10);
@@ -83,9 +92,8 @@ function buildDesignSystemMd(tokens) {
   const acc1Light   = hexShift(acc1, -15);
   const acc2Light   = hexShift(acc2, -15);
 
-  // Layout-derived tokens
   const rad    = l.borderRadius || '0px';
-  const radSm  = rad === '0px' ? '0px' : rad === '999px' ? '4px' : hexShift ? rad : rad;
+  const radSm  = rad === '0px' ? '0px' : rad === '999px' ? '4px' : rad;
   const radLg  = rad === '0px' ? '0px' : rad === '4px' ? '8px' : rad === '8px' ? '16px' : rad === '12px' ? '20px' : '24px';
   const shadow = l.shadowStyle || 'none';
   const shadowSm = shadow === 'none' ? 'none' : shadow === 'subtle' ? '0 1px 4px rgba(0,0,0,0.08)' : '0 2px 8px rgba(0,0,0,0.14)';
@@ -359,8 +367,6 @@ transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, op
 function parseMdTokens(md) {
   const colors = {};
 
-  // Strategy 1: CSS variables — our own DESIGN_SYSTEM.md format
-  // e.g.  --bg: #111110;  --accent: #8B5CF6;
   const cssRe = /--(bg|bg-card|border|text|accent|accent-2)(?![\w-]):\s*(#[0-9a-fA-F]{6,8})/g;
   const cssMap = { 'bg': 'background', 'bg-card': 'bgCard', 'border': 'border', 'text': 'text', 'accent': 'accent01', 'accent-2': 'accent02' };
   let m;
@@ -368,8 +374,6 @@ function parseMdTokens(md) {
     if (cssMap[m[1]] && !colors[cssMap[m[1]]]) colors[cssMap[m[1]]] = m[2];
   }
 
-  // Strategy 2: Prose / table format — scan every line that contains a hex code,
-  // then match it against color-role keywords in the same line.
   if (Object.keys(colors).length < 3) {
     const roleMap = [
       { patterns: ['background', 'page background', 'main background', 'bg color', 'base color'],          target: 'background' },
@@ -379,7 +383,6 @@ function parseMdTokens(md) {
       { patterns: ['accent 01', 'accent01', 'primary accent', 'primary color', 'cta', 'highlight', 'brand color', 'accent color'], target: 'accent01' },
       { patterns: ['accent 02', 'accent02', 'accent-2', 'secondary accent', 'secondary color'],             target: 'accent02' },
     ];
-
     const lines = md.split('\n');
     for (const line of lines) {
       const hexMatch = line.match(/#([0-9a-fA-F]{6})\b/);
@@ -393,8 +396,6 @@ function parseMdTokens(md) {
     }
   }
 
-  // Strategy 3: "Hex Colors Extracted From Page CSS/HTML" section appended by scraper
-  // Pick first few unique colors and assign them to empty slots in order
   if (Object.keys(colors).length < 4) {
     const cssSection = md.match(/## Hex Colors Extracted From Page CSS\/HTML\n([^\n#]+)/);
     if (cssSection) {
@@ -408,12 +409,11 @@ function parseMdTokens(md) {
     }
   }
 
-  // Font extraction — try multiple patterns in priority order
   const fontPatterns = [
-    /\|\s*Typeface\s*\|\s*([^|\n]+)/i,                           // | Typeface | Manrope |
-    /heading\s+font[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i,  // Heading font: **Inter**
-    /typeface[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i,         // Typeface: Manrope
-    /font(?:\s+family)?[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i, // Font family: Inter
+    /\|\s*Typeface\s*\|\s*([^|\n]+)/i,
+    /heading\s+font[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i,
+    /typeface[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i,
+    /font(?:\s+family)?[^:\n]*:\s*\**'?([A-Z][a-zA-Z ]+?)'?\**/i,
   ];
   let font = 'Inter';
   for (const pat of fontPatterns) {
@@ -446,13 +446,14 @@ function downloadMd(content, filename = 'DESIGN_SYSTEM.md') {
   URL.revokeObjectURL(url);
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────────
 
 const TABS = [
   { label: 'Classic Mode' },
-  { label: 'Add a Site URL' },
-  { label: 'Upload an Image' },
+  { label: 'Site URL Reference' },
+  { label: 'Upload Image' },
   { label: 'Upload Design.md' },
+  { label: 'Saved Themes' },
 ];
 
 const SWATCH_KEYS = [
@@ -463,8 +464,6 @@ const SWATCH_KEYS = [
   { key: 'accent01',   label: 'Accent 01'  },
   { key: 'accent02',   label: 'Accent 02'  },
 ];
-
-const TYPO_ROWS = ['headlines', 'sub', 'body', 'captions'];
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
@@ -478,21 +477,31 @@ export default function Stage045Gate({ project, onComplete }) {
   const [generating,   setGenerating]   = useState(false);
   const [genError,     setGenError]     = useState('');
   const [saving,       setSaving]       = useState(false);
-  const [panelTab,     setPanelTab]     = useState(0); // 0 = visual, 1 = design system, 2 = scaffold
+  // panelTab: 0 = visual, 1 = design system, 2 = scaffold (URL tab only)
+  const [panelTab,     setPanelTab]     = useState(0);
 
-  // Scaffold layout spec
+  // Scaffold
   const [scaffoldSpec,       setScaffoldSpec]       = useState('');
   const [scaffoldGenerating, setScaffoldGenerating] = useState(false);
   const [scaffoldError,      setScaffoldError]      = useState('');
 
-  // Per-tab state
-  const [refUrl,      setRefUrl]      = useState('');
-  const [imageFile,   setImageFile]   = useState(null);
-  const [imagePreview,setImagePreview]= useState('');
-  const [dragOver,    setDragOver]    = useState(false);
-  const [mdError,     setMdError]     = useState('');
+  // URL tab
+  const [refUrl,     setRefUrl]     = useState('');
+  const [refUrlName, setRefUrlName] = useState('');
 
-  // Color picker refs — one per swatch
+  // Image tab
+  const [imageFile,    setImageFile]    = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [dragOver,     setDragOver]     = useState(false);
+
+  // MD tab
+  const [mdError, setMdError] = useState('');
+
+  // Saved themes
+  const [savedThemes, setSavedThemes] = useState(() => loadSavedThemes());
+  const [themeSaved,  setThemeSaved]  = useState(false); // brief feedback flash
+
+  // Color picker refs
   const cpBg     = useRef(null); const cpBgCard = useRef(null);
   const cpBorder = useRef(null); const cpText   = useRef(null);
   const cpAcc1   = useRef(null); const cpAcc2   = useRef(null);
@@ -500,6 +509,11 @@ export default function Stage045Gate({ project, onComplete }) {
 
   const imageInputRef = useRef(null);
   const mdInputRef    = useRef(null);
+
+  // Derived: scaffold tab only visible in URL mode
+  const panelTabs = activeTab === 1
+    ? ['Visual', 'Design System', 'Scaffold']
+    : ['Visual', 'Design System'];
 
   // Pre-populate if direction already exists
   useEffect(() => {
@@ -515,10 +529,13 @@ export default function Stage045Gate({ project, onComplete }) {
   const setColor = (key, value) =>
     setTokens(prev => ({ ...prev, colors: { ...prev.colors, [key]: value } }));
 
-  const setTypo = (role, field, value) =>
-    setTokens(prev => ({ ...prev, typography: { ...prev.typography, [role]: { ...prev.typography[role], [field]: value } } }));
-
   const applyTokens = (t) => { setTokens(t); setPreviewReady(true); setGenError(''); };
+
+  const handleSetActiveTab = (i) => {
+    setActiveTab(i);
+    // Hide scaffold panel tab when leaving URL mode
+    if (i !== 1 && panelTab === 2) setPanelTab(0);
+  };
 
   // ── Tab actions ────────────────────────────────────────────────────────────
 
@@ -533,6 +550,13 @@ export default function Stage045Gate({ project, onComplete }) {
 
   const handleUrlGenerate = async () => {
     if (!refUrl.trim()) return;
+    // Auto-set name from hostname if empty
+    if (!refUrlName) {
+      try {
+        const hostname = new URL(refUrl.trim()).hostname.replace(/^www\./, '');
+        setRefUrlName(hostname);
+      } catch {}
+    }
     setGenerating(true); setGenError('');
     try {
       const { data } = await api.post(`/projects/${project.id}/direction/generate-url`, { url: refUrl.trim() });
@@ -563,7 +587,7 @@ export default function Stage045Gate({ project, onComplete }) {
 
   const handleMdUpload = (e) => {
     const file = e.target.files[0]; if (!file) return;
-    e.target.value = ''; // reset so the same file can be re-uploaded
+    e.target.value = '';
     setMdError('');
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -587,6 +611,40 @@ export default function Stage045Gate({ project, onComplete }) {
     finally { setScaffoldGenerating(false); }
   };
 
+  // ── Save theme ─────────────────────────────────────────────────────────────
+  const handleSaveTheme = () => {
+    const name = refUrlName || tokens.name || 'Untitled';
+    const theme = {
+      id: Date.now().toString(),
+      name,
+      url: refUrl || '',
+      tokens: { ...tokens, name },
+      scaffoldSpec,
+      savedAt: new Date().toISOString(),
+    };
+    const updated = [...savedThemes, theme];
+    setSavedThemes(updated);
+    persistSavedThemes(updated);
+    // Brief "Saved!" feedback
+    setThemeSaved(true);
+    setTimeout(() => setThemeSaved(false), 2000);
+  };
+
+  const handleDeleteTheme = (id) => {
+    const updated = savedThemes.filter(t => t.id !== id);
+    setSavedThemes(updated);
+    persistSavedThemes(updated);
+  };
+
+  const handleApplyTheme = (theme) => {
+    applyTokens(theme.tokens);
+    if (theme.scaffoldSpec) setScaffoldSpec(theme.scaffoldSpec);
+    // Switch to URL tab so panel shows correctly (with scaffold if present)
+    handleSetActiveTab(theme.url ? 1 : 0);
+    if (theme.url) setRefUrl(theme.url);
+    if (theme.name) setRefUrlName(theme.name);
+  };
+
   // ── Confirm ────────────────────────────────────────────────────────────────
   const handleConfirm = async () => {
     setSaving(true);
@@ -605,10 +663,10 @@ export default function Stage045Gate({ project, onComplete }) {
     finally { setSaving(false); }
   };
 
-  // ── Render helpers ─────────────────────────────────────────────────────────
-
+  // ── Render: tab input area ─────────────────────────────────────────────────
   const renderTabInput = () => {
     switch (activeTab) {
+
       // ── Tab 0: Classic Mode ──────────────────────────────────────────────
       case 0:
         if (!previewReady) {
@@ -622,27 +680,52 @@ export default function Stage045Gate({ project, onComplete }) {
         }
         return (
           <div style={{ marginBottom: 16 }}>
-            <button className="btn btn-ghost" onClick={handleClassic} disabled={generating} style={{ fontSize: 11 }}>
-              {generating ? '● Regenerating…' : '↺ Regenerate from brand audit'}
+            <button className="btn btn-ghost" onClick={handleClassic} disabled={generating} style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <IconRefresh size={13} /> {generating ? 'Regenerating…' : 'Regenerate from brand audit'}
             </button>
           </div>
         );
 
-      // ── Tab 1: URL Reference ─────────────────────────────────────────────
+      // ── Tab 1: Site URL Reference ────────────────────────────────────────
       case 1:
         return (
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* URL row */}
             <div style={{ display: 'flex', gap: 8 }}>
               <input
-                className="input" type="url" placeholder="ADD URL…"
+                className="input" type="url"
+                placeholder="Add site url for design reference…"
                 value={refUrl} onChange={e => setRefUrl(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleUrlGenerate()}
                 style={{ flex: 1 }}
               />
               <button className="btn btn-ghost" onClick={handleUrlGenerate} disabled={generating || !refUrl.trim()}>
-                {generating ? '● Generating…' : 'GENERATE STYLE'}
+                {generating ? '● Extracting…' : 'EXTRACT STYLE'}
               </button>
             </div>
+            {/* Name + save row — visible once a URL is entered */}
+            {refUrl && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  className="input"
+                  placeholder="Name this reference…"
+                  value={refUrlName}
+                  onChange={e => setRefUrlName(e.target.value)}
+                  style={{ flex: 1, height: 30, fontSize: 11 }}
+                />
+                {previewReady && (
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 10, flexShrink: 0, color: themeSaved ? 'var(--color-success)' : undefined, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                    onClick={handleSaveTheme}
+                  >
+                    {themeSaved
+                      ? <><IconBookmarkFill size={12} /> Saved</>
+                      : <><IconBookmark size={12} /> Save Theme</>}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
 
@@ -663,7 +746,7 @@ export default function Stage045Gate({ project, onComplete }) {
                   transition: 'all 0.12s',
                 }}
               >
-                <div style={{ fontSize: 20, marginBottom: 8, opacity: 0.4 }}>↑</div>
+                <div style={{ marginBottom: 8, opacity: 0.4, display: 'flex', justifyContent: 'center' }}><IconUpload size={22} /></div>
                 <div style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                   Drop image or click to upload
                 </div>
@@ -678,14 +761,15 @@ export default function Stage045Gate({ project, onComplete }) {
                     <button className="btn btn-primary" onClick={handleImageExtract} disabled={generating} style={{ fontSize: 11 }}>
                       {generating ? '● Extracting…' : 'EXTRACT STYLE'}
                     </button>
-                    <button className="btn btn-ghost" onClick={() => { setImageFile(null); setImagePreview(''); }} style={{ fontSize: 11 }}>
-                      ✕ Remove
+                    <button className="btn btn-ghost" onClick={() => { setImageFile(null); setImagePreview(''); }} style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <IconClose size={12} /> Remove
                     </button>
                   </div>
                 </div>
               </div>
             )}
-            <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { handleImageFile(e.target.files[0]); e.target.value = ''; }} />
+            <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => { handleImageFile(e.target.files[0]); e.target.value = ''; }} />
           </div>
         );
 
@@ -701,11 +785,75 @@ export default function Stage045Gate({ project, onComplete }) {
           </div>
         );
 
+      // ── Tab 4: Saved Themes ──────────────────────────────────────────────
+      case 4:
+        return (
+          <div style={{ marginBottom: 16 }}>
+            {savedThemes.length === 0 ? (
+              <div style={{
+                padding: '32px 24px', textAlign: 'center',
+                border: '1px dashed var(--border-md)',
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.7 }}>
+                  No saved themes yet.<br />
+                  Extract a site URL and click <strong>Save Theme</strong> to store it here.
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {savedThemes.map(theme => (
+                  <div key={theme.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 14px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-md)',
+                  }}>
+                    {/* Color strip */}
+                    <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                      {['background', 'bgCard', 'accent01', 'accent02', 'text'].map(k => (
+                        <div key={k} style={{
+                          width: 14, height: 36,
+                          background: theme.tokens?.colors?.[k] || '#333',
+                        }} />
+                      ))}
+                    </div>
+                    {/* Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>
+                        {theme.name}
+                      </div>
+                      {theme.url && (
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {theme.url}
+                        </div>
+                      )}
+                    </div>
+                    {/* Actions */}
+                    <button className="btn btn-ghost" style={{ fontSize: 10, flexShrink: 0 }}
+                      onClick={() => handleApplyTheme(theme)}>
+                      Apply
+                    </button>
+                    <button
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: 'var(--text-3)', padding: '0 4px',
+                        flexShrink: 0, display: 'flex', alignItems: 'center',
+                      }}
+                      onClick={() => handleDeleteTheme(theme.id)}
+                      title="Remove theme"
+                    ><IconClose size={13} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+
       default: return null;
     }
   };
 
-  // ── Design System Preview Panel ────────────────────────────────────────────
+  // ── Render: preview panel ──────────────────────────────────────────────────
   const renderPreviewPanel = () => (
     <div style={{ border: '1px solid var(--border-md)', background: 'var(--bg-card)' }}>
       {/* Panel header */}
@@ -713,9 +861,8 @@ export default function Stage045Gate({ project, onComplete }) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 16px', borderBottom: '1px solid var(--border)',
       }}>
-        {/* Tabs */}
         <div style={{ display: 'flex' }}>
-          {['Visual', 'Design System', 'Scaffold'].map((label, i) => (
+          {panelTabs.map((label, i) => (
             <button key={i} onClick={() => setPanelTab(i)} style={{
               padding: '11px 14px', background: 'transparent', border: 'none',
               borderBottom: panelTab === i ? '2px solid var(--accent)' : '2px solid transparent',
@@ -727,13 +874,13 @@ export default function Stage045Gate({ project, onComplete }) {
             }}>{label}</button>
           ))}
         </div>
-        <button className="btn btn-ghost" style={{ height: 26, padding: '0 10px', fontSize: 9 }}
+        <button className="btn btn-ghost" style={{ height: 26, padding: '0 10px', fontSize: 9, display: 'inline-flex', alignItems: 'center', gap: 5 }}
           onClick={() => downloadMd(buildDesignSystemMd(tokens), `${tokens.name || 'design-system'}.md`)}>
-          ↓ Download .md
+          <IconDownload size={11} /> Download .md
         </button>
       </div>
 
-      {/* ── Tab 1: Design System markdown ── */}
+      {/* ── Design System markdown ── */}
       {panelTab === 1 && (
         <textarea
           readOnly
@@ -747,14 +894,14 @@ export default function Stage045Gate({ project, onComplete }) {
         />
       )}
 
-      {/* ── Tab 2: Scaffold layout spec ── */}
+      {/* ── Scaffold (URL tab only) ── */}
       {panelTab === 2 && (
         <div style={{ padding: 16 }}>
           {!scaffoldSpec ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
               <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.65 }}>
-                Generates a precise structural layout specification — section order, grid patterns, column proportions,
-                element sizes and alignments. Structural only: no color, no visual styling.
+                Generates a precise structural layout specification — section order, grid patterns,
+                column proportions, element sizes and alignments. Structural only: no color or visual styling.
               </div>
               <button
                 className="btn btn-primary"
@@ -764,19 +911,19 @@ export default function Stage045Gate({ project, onComplete }) {
               >
                 {scaffoldGenerating
                   ? <><span style={{ animation: 'pulse 1s infinite' }}>●</span> Generating spec…</>
-                  : '⬡ Generate Layout Spec →'}
+                  : <><IconLayout size={13} style={{ flexShrink: 0 }} /> Generate Layout Spec</>}
               </button>
               {scaffoldError && <div style={{ fontSize: 11, color: '#ef4444' }}>{scaffoldError}</div>}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button className="btn btn-ghost" onClick={handleGenerateScaffold} disabled={scaffoldGenerating} style={{ fontSize: 10 }}>
-                  {scaffoldGenerating ? '● Regenerating…' : '↺ Regenerate'}
+                <button className="btn btn-ghost" onClick={handleGenerateScaffold} disabled={scaffoldGenerating} style={{ fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <IconRefresh size={12} /> {scaffoldGenerating ? 'Regenerating…' : 'Regenerate'}
                 </button>
-                <button className="btn btn-ghost" style={{ fontSize: 10 }}
+                <button className="btn btn-ghost" style={{ fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 5 }}
                   onClick={() => navigator.clipboard?.writeText(scaffoldSpec)}>
-                  ⎘ Copy
+                  <IconCopy size={12} /> Copy
                 </button>
               </div>
               <pre style={{
@@ -791,87 +938,91 @@ export default function Stage045Gate({ project, onComplete }) {
         </div>
       )}
 
-      {/* ── Tab 0: Visual view ── */}
-      {panelTab === 0 && <>
-      {/* Name field */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input
-          className="input"
-          placeholder="NAME / ADD RANDOM"
-          value={tokens.name}
-          onChange={e => setTokens(prev => ({ ...prev, name: e.target.value }))}
-          style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700 }}
-        />
-        <button className="btn btn-ghost" style={{ height: 32, padding: '0 12px', fontSize: 10, flexShrink: 0 }}
-          onClick={() => setTokens(prev => ({ ...prev, name: randomName() }))}>
-          Random
-        </button>
-      </div>
+      {/* ── Visual view ── */}
+      {panelTab === 0 && (
+        <>
+          {/* Name field */}
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              className="input"
+              placeholder="NAME / ADD RANDOM"
+              value={tokens.name}
+              onChange={e => setTokens(prev => ({ ...prev, name: e.target.value }))}
+              style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700 }}
+            />
+            <button className="btn btn-ghost" style={{ height: 32, padding: '0 12px', fontSize: 10, flexShrink: 0 }}
+              onClick={() => setTokens(prev => ({ ...prev, name: randomName() }))}>
+              Random
+            </button>
+          </div>
 
-      {/* Two-column: Colors + Typography */}
-      <div style={{ display: 'flex', gap: 0 }}>
-        {/* Colors */}
-        <div style={{ flex: 1, padding: '16px', borderRight: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Colors</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {SWATCH_KEYS.map(({ key, label }) => (
-              <div key={key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                {/* Swatch + pencil */}
-                <div
-                  onClick={() => cpRefs[key].current?.click()}
-                  style={{
-                    width: 52, height: 52, position: 'relative',
-                    background: tokens.colors[key] || '#333',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    cursor: 'pointer', flexShrink: 0,
-                  }}
-                >
-                  <span style={{
-                    position: 'absolute', inset: 0, display: 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    fontSize: 12, opacity: 0.5,
-                  }}>✏</span>
+          {/* Two-column: Colors + Typography */}
+          <div style={{ display: 'flex', gap: 0 }}>
+            {/* Colors */}
+            <div style={{ flex: 1, padding: '16px', borderRight: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Colors</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {SWATCH_KEYS.map(({ key, label }) => (
+                  <div key={key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                    <div
+                      onClick={() => cpRefs[key].current?.click()}
+                      style={{
+                        width: 52, height: 52, position: 'relative',
+                        background: tokens.colors[key] || '#333',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        cursor: 'pointer', flexShrink: 0,
+                      }}
+                    >
+                      <span style={{
+                        position: 'absolute', inset: 0, display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        opacity: 0.5,
+                      }}><IconEdit size={12} /></span>
+                    </div>
+                    <input
+                      ref={cpRefs[key]} type="color"
+                      value={tokens.colors[key] || '#000000'}
+                      onChange={e => setColor(key, e.target.value)}
+                      style={{ position: 'absolute', opacity: 0, width: 1, height: 1, pointerEvents: 'none' }}
+                    />
+                    <div style={{ fontSize: 9, color: 'var(--text-3)', textAlign: 'center', maxWidth: 52, lineHeight: 1.3 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Typography — read-only font display */}
+            <div style={{ flex: 1, padding: '16px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Typography</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Primary font */}
+                <div>
+                  <div style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 6 }}>
+                    Display / Headlines
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+                    {tokens.typography.headlines?.font || 'Inter'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3 }}>
+                    Aa Bb Cc 123
+                  </div>
                 </div>
-                <input
-                  ref={cpRefs[key]} type="color"
-                  value={tokens.colors[key] || '#000000'}
-                  onChange={e => setColor(key, e.target.value)}
-                  style={{ position: 'absolute', opacity: 0, width: 1, height: 1, pointerEvents: 'none' }}
-                />
-                <div style={{ fontSize: 9, color: 'var(--text-3)', textAlign: 'center', maxWidth: 52, lineHeight: 1.3 }}>{label}</div>
+                {/* Body font — only show if different */}
+                {tokens.typography.body?.font && tokens.typography.body.font !== tokens.typography.headlines?.font && (
+                  <div>
+                    <div style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: 6 }}>
+                      Body
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 400, color: 'var(--text-2)', lineHeight: 1.2 }}>
+                      {tokens.typography.body.font}
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
+            </div>
           </div>
-        </div>
-
-        {/* Typography */}
-        <div style={{ flex: 1, padding: '16px' }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Typography</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {TYPO_ROWS.map(role => (
-              <div key={role} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', width: 64, flexShrink: 0 }}>{role}</span>
-                <input
-                  className="input"
-                  value={tokens.typography[role]?.font || ''}
-                  onChange={e => setTypo(role, 'font', e.target.value)}
-                  placeholder="Font"
-                  style={{ width: 110, flexShrink: 0, height: 26, fontSize: 11, fontWeight: 700 }}
-                />
-                <span style={{ fontSize: 10, color: 'var(--text-2)', letterSpacing: '0.12em', width: 44, flexShrink: 0, textAlign: 'center' }}>ABCDE</span>
-                <input
-                  className="input"
-                  value={tokens.typography[role]?.weight || ''}
-                  onChange={e => setTypo(role, 'weight', e.target.value)}
-                  placeholder="Wt"
-                  style={{ width: 48, flexShrink: 0, height: 26, fontSize: 11, textAlign: 'center' }}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      </>}
+        </>
+      )}
     </div>
   );
 
@@ -890,7 +1041,7 @@ export default function Stage045Gate({ project, onComplete }) {
           {TABS.map((tab, i) => (
             <button
               key={i}
-              onClick={() => setActiveTab(i)}
+              onClick={() => handleSetActiveTab(i)}
               style={{
                 padding: '8px 16px',
                 background: 'transparent', border: 'none',
@@ -901,9 +1052,21 @@ export default function Stage045Gate({ project, onComplete }) {
                 letterSpacing: '0.04em',
                 transition: 'color 0.12s, border-color 0.12s',
                 marginBottom: -1,
+                position: 'relative',
               }}
             >
               {tab.label}
+              {/* Badge showing saved theme count */}
+              {i === 4 && savedThemes.length > 0 && (
+                <span style={{
+                  position: 'absolute', top: 4, right: 4,
+                  fontSize: 8, fontWeight: 800,
+                  background: 'var(--accent)', color: '#fff',
+                  borderRadius: '999px', padding: '1px 5px', lineHeight: 1.5,
+                }}>
+                  {savedThemes.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -911,18 +1074,16 @@ export default function Stage045Gate({ project, onComplete }) {
 
       {/* Zone 3 — Content Area (scrollable) */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 40px' }}>
-        {/* Error */}
         {genError && (
           <div style={{ marginBottom: 16, padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', fontSize: 12, color: '#ef4444' }}>
             {genError}
           </div>
         )}
 
-        {/* Tab-specific input area */}
         {renderTabInput()}
 
-        {/* Design System Preview Panel — shared, persists across tabs */}
-        {previewReady && renderPreviewPanel()}
+        {/* Preview panel — shown when tokens are loaded (not on Saved Themes tab) */}
+        {previewReady && activeTab !== 4 && renderPreviewPanel()}
       </div>
 
       {/* Zone 4 — Footer (sticky) */}
@@ -931,7 +1092,6 @@ export default function Stage045Gate({ project, onComplete }) {
         background: 'var(--bg-card)', padding: '14px 40px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-        {/* Light+dark toggle */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div
             onClick={() => setLightDark(v => !v)}
@@ -952,7 +1112,6 @@ export default function Stage045Gate({ project, onComplete }) {
           </span>
         </div>
 
-        {/* Confirm */}
         <button
           className="btn btn-primary btn-lg"
           onClick={handleConfirm}

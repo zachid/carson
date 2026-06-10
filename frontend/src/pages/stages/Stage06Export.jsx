@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import api from '../../api/client.js';
+import { IconDownload } from '../../components/Icons.jsx';
 
 export default function Stage06Export({ project }) {
   const [loading, setLoading] = useState(false);
@@ -56,15 +57,17 @@ export default function Stage06Export({ project }) {
             className="btn btn-ghost btn-lg"
             href={`/api/projects/${project.id}/export/html`}
             download="site.html"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
           >
-            ↓ Download HTML
+            <IconDownload size={14} /> Download HTML
           </a>
           <a
             className="btn btn-ghost btn-lg"
             href={`/api/projects/${project.id}/export/pdf`}
             download="site.pdf"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
           >
-            ↓ Download PDF
+            <IconDownload size={14} /> Download PDF
           </a>
         </div>
       )}
