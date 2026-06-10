@@ -15,15 +15,21 @@ router.get('/', async (req, res) => {
 
   try {
     if (isOwner) {
-      // Fetch everything, then claim any unowned (legacy) projects
-      const snap = await db.collection('projects').orderBy('updated_at', 'desc').get();
+      // Fetch everything (no orderBy — sort in JS to avoid index requirements),
+      // then claim any unowned (legacy) projects.
+      const snap = await db.collection('projects').get();
       const unowned = snap.docs.filter(d => !d.data().userId);
       if (unowned.length > 0) {
         const batch = db.batch();
         unowned.forEach(d => batch.update(d.ref, { userId: uid }));
         await batch.commit();
       }
-      res.json(toDocs(snap));
+      const docs = toDocs(snap).sort((a, b) => {
+        const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        return tb - ta;
+      });
+      res.json(docs);
     } else {
       // Regular user — only their own projects.
       // No orderBy here to avoid requiring a composite Firestore index; sort in JS.
