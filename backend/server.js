@@ -618,8 +618,8 @@ app.post('/api/parse-content', upload.single('file'), async (req, res) => {
     let text = '';
 
     if (mimetype === 'application/pdf' || name.endsWith('.pdf')) {
-      // pdf-parse ESM-safe dynamic import
-      const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
+      // pdf-parse dynamic import (use top-level package, not internal path)
+      const pdfParse = (await import('pdf-parse')).default;
       const result = await pdfParse(buffer);
       text = result.text;
     } else if (
