@@ -83,7 +83,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent}
 .t-light{background:#F2F2EF}
 
 .stage{width:100%;flex:1;position:relative;overflow:hidden}
-.scene{position:absolute;inset:0;opacity:0;transition:opacity 0.7s ease;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.scene{position:absolute;inset:0;opacity:0;transition:opacity 0.7s ease;display:flex;flex-direction:column;align-items:center;justify-content:center;transform:scale(1.25);transform-origin:center center}
 .scene.active{opacity:1}
 
 .caption{text-align:center;padding:0 0 18px;display:flex;flex-direction:column;gap:5px}
@@ -515,7 +515,7 @@ export default function Login() {
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        padding: '80px 0 80px clamp(32px, 8vw, 120px)',
+        padding: '80px 0 80px calc(clamp(32px, 8vw, 120px) + 40px)',
         position: 'relative',
       }}>
 
@@ -523,7 +523,7 @@ export default function Login() {
         <div style={{
           position: 'absolute',
           top: 52,
-          left: 'clamp(32px, 8vw, 120px)',
+          left: 'calc(clamp(32px, 8vw, 120px) + 40px)',
           fontSize: 10,
           fontWeight: 700,
           letterSpacing: '0.28em',
@@ -636,7 +636,7 @@ export default function Login() {
         <div style={{
           position: 'absolute',
           bottom: 40,
-          left: 'clamp(32px, 8vw, 120px)',
+          left: 'calc(clamp(32px, 8vw, 120px) + 40px)',
           display: 'flex',
           gap: 8,
           alignItems: 'center',
